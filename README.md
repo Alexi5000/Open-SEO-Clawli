@@ -1,3 +1,27 @@
+# Open-SEO-Clawli
+
+> Fork of [OpenSEO](https://github.com/every-app/open-seo) maintained for [Clawli.ai](https://clawli.ai)
+
+This public fork is used by TechTide / Clawli for:
+
+- The **Clawli.ai** project
+- Our **LinkedIn CRM dashboard**
+- Our **LinkedIn SEO** workflows
+
+This fork may diverge from upstream as we adapt OpenSEO for those Clawli use cases. For the original product, docs, and community, see [every-app/open-seo](https://github.com/every-app/open-seo) and [openseo.so](https://openseo.so).
+
+## Credit
+
+Open-SEO-Clawli is based on **[OpenSEO](https://github.com/every-app/open-seo)** by [every-app](https://github.com/every-app) / [Ben Senescu](https://x.com/bensenescu).
+
+- Upstream repository: [https://github.com/every-app/open-seo](https://github.com/every-app/open-seo)
+- Hosted product: [https://openseo.so](https://openseo.so)
+- License: MIT (see [`LICENSE`](./LICENSE)) — Copyright (c) 2026 Ben Senescu
+
+Thank you to the OpenSEO maintainers and contributors for releasing this as open source.
+
+---
+
 # OpenSEO
 
 > Open source alternative to Semrush and Ahrefs
