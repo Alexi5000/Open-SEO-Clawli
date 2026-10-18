@@ -39,7 +39,7 @@
     "release:publish": "node scripts/publish-release.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ci": "vitest run --reporter=dot",
+    "test:ci": "vitest run --reporter=dot --maxWorkers=4",
     "test:e2e": "playwright test",
     "test:e2e:domain": "playwright test e2e/domain-overview-filters.spec.ts",
     "test:e2e:domain:perf": "playwright test e2e/domain-overview-filters.perf.spec.ts",
