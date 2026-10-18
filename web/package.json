@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "sideEffects": false,
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.2"
+    }
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && node scripts/generate-sitemap.js",
