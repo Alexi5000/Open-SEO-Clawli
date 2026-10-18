@@ -4,8 +4,7 @@ export type PlanStatus = "free" | "paid";
 
 export function getCustomerPlanStatus(
   customer:
-    | { subscriptions?: Array<{ planId: string; status: string }> }
-    | undefined,
+    { subscriptions?: Array<{ planId: string; status: string }> } | undefined,
 ): PlanStatus {
   if (!customer?.subscriptions) return "free";
 

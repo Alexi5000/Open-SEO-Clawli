@@ -20,9 +20,8 @@ export interface AuditConfig {
 // unviewable.
 const lighthouseStrategySchema = z
   .enum(["auto", "all", "manual", "none"])
-  .transform(
-    (value): LighthouseStrategy =>
-      value === "all" ? "auto" : value === "manual" ? "none" : value,
+  .transform((value): LighthouseStrategy =>
+    value === "all" ? "auto" : value === "manual" ? "none" : value,
   )
   .catch("auto");
 

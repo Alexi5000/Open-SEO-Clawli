@@ -15,11 +15,7 @@ import { formatCompactNumber } from "../utils";
 import { FloatingTooltip, useFloatingTooltip } from "./FloatingTooltip";
 
 export type SortField =
-  | "keyword"
-  | "searchVolume"
-  | "cpc"
-  | "competition"
-  | "keywordDifficulty";
+  "keyword" | "searchVolume" | "cpc" | "competition" | "keywordDifficulty";
 export type SortDir = "asc" | "desc";
 
 export function HeaderHelpLabel({

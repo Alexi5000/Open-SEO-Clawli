@@ -31,6 +31,7 @@
     "**/*.{js,mjs,ts,tsx}",
     "!src/routeTree.gen.ts",
     "!web/**",
+    "!vendor/**",
     // Alchemy state/bundle artifacts (gitignored)
     "!.alchemy/**",
     "!badseo/**",
@@ -42,5 +43,7 @@
     // Tailwindcss used via @tailwindcss/vite plugin
     "tailwindcss",
     "daisyui",
+    "braces",
+    "micromatch",
   ],
 }
