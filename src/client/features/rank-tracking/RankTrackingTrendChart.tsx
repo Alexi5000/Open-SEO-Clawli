@@ -8,7 +8,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { TooltipContentProps } from "recharts";
 
 export interface TrendSeries {
   /** key into each data row holding the position value (1 = best, serpDepth = bottom band) */
@@ -23,14 +22,6 @@ interface TooltipEntry {
   dataKey?: string | number;
   name?: string;
   value: number | null;
-  color?: string;
-}
-
-/** Narrowed shape of a recharts tooltip payload entry (typed `any` upstream). */
-interface RechartsPayloadEntry {
-  dataKey?: string | number;
-  name?: string;
-  value?: number | string | null;
   color?: string;
 }
 
@@ -113,19 +104,18 @@ export function RankTrendChart({
               width={32}
             />
             <Tooltip
-              content={(props: TooltipContentProps<number, string>) => {
+              content={(props) => {
                 const { active, payload, label } = props;
                 if (!active || !payload?.length || typeof label !== "number") {
                   return null;
                 }
-                const entries: TooltipEntry[] = payload.map(
-                  (p: RechartsPayloadEntry) => ({
-                    dataKey: p.dataKey,
-                    name: p.name,
-                    value: typeof p.value === "number" ? p.value : null,
-                    color: p.color,
-                  }),
-                );
+                const entries: TooltipEntry[] = payload.map((p) => ({
+                  dataKey:
+                    typeof p.dataKey === "function" ? undefined : p.dataKey,
+                  name: p.name === undefined ? undefined : String(p.name),
+                  value: typeof p.value === "number" ? p.value : null,
+                  color: p.color,
+                }));
                 return renderTooltip(label, entries);
               }}
               cursor={{ stroke: "rgba(150,150,150,0.3)" }}

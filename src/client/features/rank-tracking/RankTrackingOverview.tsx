@@ -9,7 +9,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { TooltipContentProps } from "recharts";
 import { getRankConfigTrend } from "@/serverFunctions/rank-tracking";
 import {
   formatDateTick,
@@ -23,12 +22,6 @@ const BUCKETS = [
   { key: "top11to20", label: "11–20", color: "#f59e0b" },
   { key: "notRanking", label: "Not in top 20", color: "#6b7280" },
 ] as const;
-
-/** Narrowed recharts tooltip payload entry (typed `any` upstream). */
-interface PayloadEntry {
-  dataKey?: string | number;
-  value?: number | string | null;
-}
 
 export function RankTrackingOverview({
   device,
@@ -134,7 +127,7 @@ export function RankTrackingOverview({
                   width={28}
                 />
                 <Tooltip
-                  content={(props: TooltipContentProps<number, string>) => {
+                  content={(props) => {
                     const { active, payload, label } = props;
                     if (
                       !active ||
@@ -144,7 +137,7 @@ export function RankTrackingOverview({
                       return null;
                     }
                     const byKey = new Map(
-                      payload.map((p: PayloadEntry) => [
+                      payload.map((p) => [
                         String(p.dataKey),
                         typeof p.value === "number" ? p.value : 0,
                       ]),

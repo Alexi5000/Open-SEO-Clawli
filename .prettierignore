@@ -14,3 +14,7 @@ drizzle-pg/
 planning/
 worker-configuration.d.ts
 web/
+
+vendor/
+security-*.log
+dependency-audit.json

@@ -27,9 +27,7 @@ export type KeywordSearchTabInput = {
 };
 
 export type SearchTabInput =
-  | BacklinksSearchTabInput
-  | DomainSearchTabInput
-  | KeywordSearchTabInput;
+  BacklinksSearchTabInput | DomainSearchTabInput | KeywordSearchTabInput;
 
 export type SearchTab = {
   id: string;
