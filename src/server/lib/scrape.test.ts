@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readPages, readSite } from "@/server/lib/scrape";
+import { parsePageContent, readPages, readSite } from "@/server/lib/scrape";
 
 describe("readSite SSRF guard", () => {
   beforeEach(() => {
@@ -54,5 +54,21 @@ describe("readPages SSRF guard", () => {
     expect(result.blocked).toBe(true);
     expect(result.pages).toEqual([]);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("HTML content extraction", () => {
+  it("parses malformed script closing tags and keeps paragraph boundaries", async () => {
+    const result = await parsePageContent(
+      "<title>A &amp; B</title><p>First</p><script>secret()</script > <p>Second</p>",
+    );
+    expect(result).toEqual({ title: "A & B", text: "First Second" });
+  });
+
+  it("decodes entities once and omits non-content blocks", async () => {
+    const result = await parsePageContent(
+      "<p>&amp;lt;literal&amp;gt; &#65; &copy;</p><style>hidden</style><template>hidden</template>",
+    );
+    expect(result.text).toBe("&lt;literal&gt; A ©");
   });
 });

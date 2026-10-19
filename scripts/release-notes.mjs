@@ -3,7 +3,13 @@
 // @ts-check
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -289,25 +295,27 @@ process.stdout.write(`${notes}\n`);
 if (values.draft) {
   const tag = values.draft;
   const releaseTitle = tag.startsWith("v") ? tag : `v${tag}`;
-  const tmpFile = path.join(
-    os.tmpdir(),
-    `quick-eagle-release-notes-${Date.now()}.md`,
-  );
-  writeFileSync(tmpFile, notes);
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "open-seo-release-"));
+  const tmpFile = path.join(tmpDir, "notes.md");
+  try {
+    writeFileSync(tmpFile, notes, { flag: "wx", mode: 0o600 });
 
-  const args = [
-    "release",
-    "create",
-    releaseTitle,
-    "--draft",
-    "--title",
-    releaseTitle,
-    "--notes-file",
-    tmpFile,
-  ];
-  if (repo) args.push("--repo", repo);
+    const args = [
+      "release",
+      "create",
+      releaseTitle,
+      "--draft",
+      "--title",
+      releaseTitle,
+      "--notes-file",
+      tmpFile,
+    ];
+    if (repo) args.push("--repo", repo);
 
-  gh(args);
+    gh(args);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
   process.stderr.write(
     `Draft release created: ${releaseTitle}${repo ? ` (${repo})` : ""}\n`,
   );
