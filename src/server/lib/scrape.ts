@@ -103,40 +103,29 @@ function parseSitemapUrls(xml: string, origin: string): string[] {
     } catch {
       continue;
     }
-    if (resolved.startsWith(origin) && !resolved.endsWith(".xml")) {
+    if (
+      new URL(resolved).origin === new URL(origin).origin &&
+      !new URL(resolved).pathname.endsWith(".xml")
+    ) {
       urls.push(resolved);
     }
   }
   return urls;
 }
 
-function extractTitle(html: string): string | null {
-  const match = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
-  return match ? decodeEntities(match[1].trim()) : null;
-}
-
-/** Strips scripts/styles/tags and collapses whitespace into readable text. */
-function htmlToText(html: string): string {
-  const withoutBlocks = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<!--[\s\S]*?-->/g, " ");
-  const text = withoutBlocks
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return decodeEntities(text);
-}
-
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
+export async function parsePageContent(
+  html: string,
+): Promise<{ title: string | null; text: string }> {
+  const { load } = await import("cheerio");
+  const $ = load(html);
+  const title = $("title").first().text().trim() || null;
+  $("script, style, noscript, template, title").remove();
+  $("br, p, div, section, article, li, h1, h2, h3, h4, h5, h6, td, th").each(
+    (_, element) => {
+      $(element).append(" ");
+    },
+  );
+  return { title, text: $("body").text().replace(/\s+/g, " ").trim() };
 }
 
 /** Fetches one (already-validated) URL and shapes it as a page, or null if it
@@ -146,11 +135,12 @@ async function scrapePage(url: string): Promise<ScrapedPage | null> {
   if (!html) {
     return null;
   }
-  const text = htmlToText(html).slice(0, PER_PAGE_CHAR_LIMIT);
+  const content = await parsePageContent(html);
+  const text = content.text.slice(0, PER_PAGE_CHAR_LIMIT);
   if (text.length === 0) {
     return null;
   }
-  return { url, title: extractTitle(html), text };
+  return { url, title: content.title, text };
 }
 
 /**
