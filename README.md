@@ -32,8 +32,6 @@ OpenSEO is an SEO tool for _the people_. If tools like Semrush or Ahrefs are too
 
 Connect with any agent like Claude Code, OpenClaw or Hermes. We have pre-built skills, but you can build your own to tailor OpenSEO to your needs.
 
-<img width="1385" height="794" alt="Image" src="https://github.com/user-attachments/assets/fd208249-44ea-4849-bb4b-5fc896aeab73" />
-
 ## Hosted Version
 
 Try OpenSEO for free on our website. If you want to support the project, a hosted subscription is $10/month.
@@ -98,3 +96,7 @@ Follow along for updates:
 
 - Follow on X: https://x.com/bensenescu
 - Sign up for the mailing list on our website: [openseo.so](https://openseo.so)
+
+## Fork security reporting
+
+For suspected vulnerabilities in this fork, follow [SECURITY.md](SECURITY.md) and use the private GitHub reporting channel. Do not post credentials, customer data, or unresolved exploit details in public issues.
