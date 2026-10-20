@@ -32,7 +32,6 @@ OpenSEO is an SEO tool for _the people_. If tools like Semrush or Ahrefs are too
 
 Connect with any agent like Claude Code, OpenClaw or Hermes. We have pre-built skills, but you can build your own to tailor OpenSEO to your needs.
 
-
 ## Hosted Version
 
 Try OpenSEO for free on our website. If you want to support the project, a hosted subscription is $10/month.
