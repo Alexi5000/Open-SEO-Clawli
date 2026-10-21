@@ -2,23 +2,36 @@
 
 > Fork of [OpenSEO](https://github.com/every-app/open-seo) maintained for [Clawli.ai](https://clawli.ai)
 
-This public fork is used by TechTide / Clawli for:
+## Why this fork exists
 
-- The **Clawli.ai** project
-- Our **LinkedIn CRM dashboard**
-- Our **LinkedIn SEO** workflows
+**What it does.** Open-SEO-Clawli is a fork of OpenSEO, an open source SEO tool (keyword research, rank tracking, competitor insights, backlinks, site audits, AI visibility) that runs on Cloudflare Workers or in Docker, fetches data from DataForSEO with your own API key, and exposes an MCP server so agents such as Claude Code can use the SEO data directly. The fork carries the upstream product plus TechTide maintenance commits: dependency and build hardening, a scraper fix, a private security-reporting policy, and a vendored patched `braces` build.
 
-This fork may diverge from upstream as we adapt OpenSEO for those Clawli use cases. For the original product, docs, and community, see [every-app/open-seo](https://github.com/every-app/open-seo) and [openseo.so](https://openseo.so).
+**Who it serves.** TechTide AI operators who self-host OpenSEO for Clawli.ai and LinkedIn content work, and anyone who wants upstream OpenSEO together with the security patches listed under [Upstream](#upstream) and [Security](#security) without waiting for an upstream release.
 
-## Credit
+**Why Alex forked it.** Alex Cinovoj, Founder & CTO of TechTide AI, forked [every-app/open-seo](https://github.com/every-app/open-seo) on 2026-07-20 (GitHub API `created_at`). The first fork-only commit (`a28af1f8`, 2026-07-20: "docs: add Clawli.ai fork purpose and upstream credit") records the purpose: the fork is used for the Clawli.ai project, a LinkedIn CRM dashboard, and LinkedIn SEO workflows, and may diverge from upstream as OpenSEO is adapted for those uses. Two unmerged branches from the same week show the direction: `feat/mcp-rank-tracking-write` (`b2f97a39`, 2026-07-23: "feat(mcp): add/remove rank tracking keywords") lets an agent manage rank-tracking keywords through the MCP, and `fix/rank-tracking-empty-check-now` (`f3683ba7`, 2026-07-23) adds a Check Now button to the empty rank-tracking state. The 2026-10-18 to 2026-10-20 commits (#1 to #5) are maintenance: dependency graph updates, explicit source-map upload configuration, patched esbuild, HTML scraping fix, and a private vulnerability-reporting policy.
 
-Open-SEO-Clawli is based on **[OpenSEO](https://github.com/every-app/open-seo)** by [every-app](https://github.com/every-app) / [Ben Senescu](https://x.com/bensenescu).
+**Real-world use case (2025-2026 evidence).** **Proposed use case.** A TechTide operator self-hosts this fork on Cloudflare Workers with their own DataForSEO key, connects Claude Code to the fork's MCP server, and asks the agent to add the Clawli.ai landing pages' target keywords to rank tracking and report weekly position changes next to competitor pages. Upstream OpenSEO is actively released (v0.1.14 on 2026-10-19)[^1]; the MCP server implements the Model Context Protocol, whose current specification revision is dated 2025-11-25[^2]; and the Cloudflare Workers runtime the app deploys to publishes changelog entries through 2026-09-28[^3]. The repository has upstream unit tests and CI builds, but no deployment configuration, fixtures, or logs that show this fork running in production, so the scenario remains proposed.
 
-- Upstream repository: [https://github.com/every-app/open-seo](https://github.com/every-app/open-seo)
-- Hosted product: [https://openseo.so](https://openseo.so)
-- License: MIT (see [`LICENSE`](./LICENSE)) — Copyright (c) 2026 Ben Senescu
+## Upstream
 
-Thank you to the OpenSEO maintainers and contributors for releasing this as open source.
+| Item                        | Value                                                                                                                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upstream                    | [every-app/open-seo](https://github.com/every-app/open-seo) (OpenSEO) by [every-app](https://github.com/every-app) / [Ben Senescu](https://x.com/bensenescu); hosted product at [openseo.so](https://openseo.so) |
+| Upstream license            | MIT, Copyright (c) 2026 Ben Senescu. [`LICENSE`](./LICENSE) is unchanged and this fork is not relicensed.                                                                                                        |
+| Fork created                | 2026-07-20 (GitHub API `created_at`)                                                                                                                                                                             |
+| Position vs upstream `main` | 7 commits ahead, 433 commits behind as of 2026-10-21 (`gh api repos/Alexi5000/Open-SEO-Clawli/compare/every-app:main...Alexi5000:main`)                                                                          |
+
+**What changed in this fork.** 7 fork-only commits touching 44 files (GitHub compare, 2026-10-21):
+
+- `a28af1f8` (2026-07-20): README fork purpose and upstream credit.
+- `8c981992` (2026-07-23): merge of upstream `main` into the fork.
+- `79fcf97f` (2026-10-18, #1): application and documentation dependency graph updates (`package.json`, `pnpm-lock.yaml`, `web/`, `badseo/`), plus a vendored patched `braces` 3.0.3 under `vendor/braces` applied through a pnpm override and checked by `scripts/verify-braces.cjs` before every build.
+- `7027cfbf` (2026-10-18, #2): the source-map upload workflow requires explicit PostHog configuration.
+- `3a05bb36` (2026-10-18, #3): patched esbuild pinned across the application and landing builds.
+- `bd3cdf3c` (2026-10-19, #4): scraped HTML parsed with an HTML parser instead of regular expressions; the release-notes script isolates its temporary files.
+- `e8f870be` (2026-10-20, #5): `SECURITY.md` with private vulnerability reporting; a broken screenshot removed.
+
+Thank you to the OpenSEO maintainers and contributors for releasing this as open source. For the original product, docs, and community, see [every-app/open-seo](https://github.com/every-app/open-seo) and [openseo.so](https://openseo.so).
 
 ---
 
@@ -97,6 +110,18 @@ Follow along for updates:
 - Follow on X: https://x.com/bensenescu
 - Sign up for the mailing list on our website: [openseo.so](https://openseo.so)
 
-## Fork security reporting
+## Security
 
 For suspected vulnerabilities in this fork, follow [SECURITY.md](SECURITY.md) and use the private GitHub reporting channel. Do not post credentials, customer data, or unresolved exploit details in public issues.
+
+Known upstream advisory with no fixed release as of 2026-10-20: `sprintf-js` 1.1.3, [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) (moderate, denial of service through unbounded precision specifiers, published 2026-09-24)[^4]. It reaches `pnpm-lock.yaml` through `agents` 0.17.3 -> `just-bash` 3.6.0 -> `sprintf-js`. Existing mitigation: `vite-plugin-lean-worker-bundle.ts` aliases `just-bash` to `src/server/lib/just-bash-stub.ts` (upstream commit `1a74904b`), so neither `just-bash` nor `sprintf-js` is bundled into the built worker; the package stays in the lockfile for the disabled workspace bash tool. The Dependabot alert is left open until a fixed release exists.
+
+Code scanning status as of 2026-10-21: 0 open Dependabot alerts other than the advisory above, and 0 critical or high code-scanning alerts. The GitHub Actions workflows pin third-party actions by commit SHA and declare read-only token permissions. One CodeQL finding (`js/file-access-to-http` in `scripts/migrate-d1-to-postgres.ts`) is left open by design: the operator-run migration script reads the D1 `database_id` from `wrangler.jsonc` and includes it in the Cloudflare API request URL.
+
+[^1]: every-app/open-seo, release v0.1.14, published 2026-10-19. https://github.com/every-app/open-seo/releases/tag/v0.1.14
+
+[^2]: Model Context Protocol, "Specification", revision 2025-11-25. https://modelcontextprotocol.io/specification/2025-11-25
+
+[^3]: Cloudflare, "Workers Changelog", entries through 2026-09-28 (accessed 2026-10-21). https://developers.cloudflare.com/workers/platform/changelog/
+
+[^4]: GitHub Advisory Database, GHSA-hp3w-g68c-fv3c, published 2026-09-24. https://github.com/advisories/GHSA-hp3w-g68c-fv3c
