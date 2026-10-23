@@ -114,9 +114,11 @@ Follow along for updates:
 
 For suspected vulnerabilities in this fork, follow [SECURITY.md](SECURITY.md) and use the private GitHub reporting channel. Do not post credentials, customer data, or unresolved exploit details in public issues.
 
-Known upstream advisory with no fixed release as of 2026-10-20: `sprintf-js` 1.1.3, [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) (moderate, denial of service through unbounded precision specifiers, published 2026-09-24)[^4]. It reaches `pnpm-lock.yaml` through `agents` 0.17.3 -> `just-bash` 3.6.0 -> `sprintf-js`. Existing mitigation: `vite-plugin-lean-worker-bundle.ts` aliases `just-bash` to `src/server/lib/just-bash-stub.ts` (upstream commit `1a74904b`), so neither `just-bash` nor `sprintf-js` is bundled into the built worker; the package stays in the lockfile for the disabled workspace bash tool. The Dependabot alert is left open until a fixed release exists.
+GitHub withdrew the `sprintf-js` advisory [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) on 2026-10-22 at 19:21:04 UTC because applications are responsible for handling exceptions appropriately.[^4] Dependabot alert #115 was classified as inaccurate on 2026-10-23 using that official withdrawal. This is an advisory classification, not a new dependency patch.
 
-Code scanning status as of 2026-10-21: 0 open Dependabot alerts other than the advisory above, and 0 critical or high code-scanning alerts. The GitHub Actions workflows pin third-party actions by commit SHA and declare read-only token permissions. One CodeQL finding (`js/file-access-to-http` in `scripts/migrate-d1-to-postgres.ts`) is left open by design: the operator-run migration script reads the D1 `database_id` from `wrangler.jsonc` and includes it in the Cloudflare API request URL.
+The existing runtime mitigation remains: `vite-plugin-lean-worker-bundle.ts` aliases `just-bash` to `src/server/lib/just-bash-stub.ts`, excluding `just-bash` and its `sprintf-js` dependency from the built worker. The dependency remains in the lockfile for the disabled workspace bash tool.
+
+GitHub reports 0 open Dependabot alerts and 0 open code-scanning alerts as of 2026-10-23. These repository dashboard counts do not establish production security or complete vulnerability coverage.
 
 [^1]: every-app/open-seo, release v0.1.14, published 2026-10-19. https://github.com/every-app/open-seo/releases/tag/v0.1.14
 
@@ -124,4 +126,4 @@ Code scanning status as of 2026-10-21: 0 open Dependabot alerts other than the a
 
 [^3]: Cloudflare, "Workers Changelog", entries through 2026-09-28 (accessed 2026-10-21). https://developers.cloudflare.com/workers/platform/changelog/
 
-[^4]: GitHub Advisory Database, GHSA-hp3w-g68c-fv3c, published 2026-09-24. https://github.com/advisories/GHSA-hp3w-g68c-fv3c
+[^4]: GitHub Advisory Database, GHSA-hp3w-g68c-fv3c, withdrawn 2026-10-22; verified 2026-10-23. https://github.com/advisories/GHSA-hp3w-g68c-fv3c
