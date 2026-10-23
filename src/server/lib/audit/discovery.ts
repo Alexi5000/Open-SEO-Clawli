@@ -3,6 +3,7 @@
  */
 import robotsParser from "robots-parser";
 import { XMLParser } from "fast-xml-parser";
+import { isCrawlableUrl } from "./url-policy";
 import { isSameOrigin, normalizeUrl } from "./url-utils";
 
 const SITEMAP_FETCH_TIMEOUT_MS = 15_000;
@@ -10,6 +11,8 @@ const MAX_SITEMAP_DEPTH = 3;
 const MAX_SITEMAP_DOCS = 300;
 const SITEMAP_CONCURRENCY = 5;
 const SITEMAP_RETRIES = 1;
+const MAX_DISCOVERY_REDIRECTS = 5;
+const DISCOVERY_USER_AGENT = "OpenSEO-Audit/1.0";
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -22,19 +25,50 @@ export interface RobotsResult {
 }
 
 /**
+ * Fetch a discovery document with manual redirect handling. Every hop
+ * (including the first request) must pass the crawler URL policy before it is
+ * dispatched, so a redirect can never reach a blocked or private destination.
+ * Returns null when a hop is rejected, the chain exceeds the hop limit, or a
+ * redirect has no usable Location header.
+ */
+async function fetchDiscoveryDocument(
+  url: string,
+  timeoutMs: number,
+  maxRedirects = MAX_DISCOVERY_REDIRECTS,
+): Promise<{ response: Response; finalUrl: string } | null> {
+  let currentUrl = url;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    if (!isCrawlableUrl(currentUrl)) return null;
+
+    const response = await fetch(currentUrl, {
+      headers: { "User-Agent": DISCOVERY_USER_AGENT },
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (response.status < 300 || response.status >= 400) {
+      return { response, finalUrl: currentUrl };
+    }
+
+    const location = response.headers.get("location");
+    const nextUrl = location ? normalizeUrl(location, currentUrl) : null;
+    await response.body?.cancel();
+    if (!nextUrl) return null;
+    currentUrl = nextUrl;
+  }
+  return null;
+}
+
+/**
  * Fetch the raw robots.txt body (null = missing/unreachable). Kept separate
  * from parsing so Workflows can checkpoint the text as durable step state and
  * re-derive the parsed result deterministically on replay.
  */
 async function fetchRobotsTxtText(origin: string): Promise<string | null> {
   try {
-    const response = await fetch(`${origin}/robots.txt`, {
-      headers: { "User-Agent": "OpenSEO-Audit/1.0" },
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!response.ok) return null;
-    return await response.text();
+    const result = await fetchDiscoveryDocument(`${origin}/robots.txt`, 10_000);
+    if (!result || !result.response.ok) return null;
+    return await result.response.text();
   } catch (error) {
     console.warn("Failed to fetch robots.txt:", error);
     return null;
@@ -133,12 +167,16 @@ async function fetchSitemapDocumentWithRetry(sitemapUrl: string): Promise<{
 
   for (let attempt = 0; attempt <= SITEMAP_RETRIES; attempt++) {
     try {
-      const response = await fetch(normalizedSitemapUrl, {
-        headers: { "User-Agent": "OpenSEO-Audit/1.0" },
-        signal: AbortSignal.timeout(SITEMAP_FETCH_TIMEOUT_MS),
-      });
+      const result = await fetchDiscoveryDocument(
+        normalizedSitemapUrl,
+        SITEMAP_FETCH_TIMEOUT_MS,
+      );
+      if (!result) {
+        return { nestedSitemaps: [], pageUrls: [], timedOut: false };
+      }
+      const { response } = result;
 
-      const finalUrl = normalizeUrl(response.url, normalizedSitemapUrl);
+      const finalUrl = normalizeUrl(result.finalUrl, normalizedSitemapUrl);
       if (!finalUrl || !isSameOrigin(finalUrl, normalizedSitemapUrl)) {
         return { nestedSitemaps: [], pageUrls: [], timedOut: false };
       }
