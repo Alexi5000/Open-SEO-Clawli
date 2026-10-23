@@ -29,6 +29,27 @@ describe("auth redirect helpers", () => {
     expect(normalizeAuthRedirect("//evil.example/app")).toBe("/");
   });
 
+  it("rejects browser-normalized external destinations after search decoding", () => {
+    for (const encoded of [
+      "%2F%5Cevil.example%2Fmarker",
+      "%2F%09%2Fevil.example%2Fmarker",
+      "%2F%0A%2Fevil.example%2Fmarker",
+      "%2F%0D%5Cevil.example%2Fmarker",
+    ]) {
+      const value = new URLSearchParams(`redirect=${encoded}`).get("redirect");
+      expect(new URL(value!, "https://app.example").origin).toBe(
+        "https://evil.example",
+      );
+      expect(normalizeAuthRedirect(value)).toBe("/");
+    }
+  });
+
+  it("retains exact internal query and fragment bytes", () => {
+    const value =
+      "/projects?next=https%3A%2F%2Fexternal.example&sig=a%2Bb#results";
+    expect(normalizeAuthRedirect(value)).toBe(value);
+  });
+
   it("keeps same-origin relative redirects", () => {
     expect(
       normalizeAuthRedirect("/api/auth/oauth2/authorize?client_id=abc"),

@@ -7,6 +7,13 @@ export function normalizeAuthRedirect(value: string | null | undefined) {
     return "/";
   }
 
+  try {
+    const base = "https://auth-redirect.invalid";
+    if (new URL(value, base).origin !== base) return "/";
+  } catch {
+    return "/";
+  }
+
   return value;
 }
 
