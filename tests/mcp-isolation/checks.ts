@@ -31,7 +31,7 @@ export function check(input: Omit<Check, "outcome"> & { ok: boolean }) {
 }
 
 function cell(value: string) {
-  const flat = value.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  const flat = value.replace(/\s+/g, " ").replace(/[\\|]/g, "\\$&").trim();
   return flat.length > 160 ? `${flat.slice(0, 157)}...` : flat;
 }
 
