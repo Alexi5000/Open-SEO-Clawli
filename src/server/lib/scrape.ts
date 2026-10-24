@@ -81,6 +81,8 @@ async function fetchText(
         if (response.status === 404 || response.status === 410) return null;
         break;
       }
+      await response.body?.cancel();
+      if (hop === MAX_REDIRECTS) return null;
       // Re-validates host, blocks private IPs, and does DoH DNS resolution.
       // A blocked or invalid destination is not sent to Context either: it
       // follows redirects itself and would reach the blocked host.

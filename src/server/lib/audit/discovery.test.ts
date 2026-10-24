@@ -11,6 +11,34 @@ describe("discoverUrls", () => {
   // dropped here reports inSitemap: false once the crawl reaches it through a
   // link. Real sitemaps bury the homepage in the middle of the list
   // (bannerbear.com lists it 387th of 1,328).
+  it("bounds robots bytes and cancels the unread remainder", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("#" + "é".repeat(300_000)));
+      },
+      cancel,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/robots.txt")
+          ? new Response(body)
+          : new Response(null, { status: 404 }),
+      ),
+    );
+    try {
+      const { robotsText } = await discoverUrls("https://example.com");
+      expect(new TextEncoder().encode(robotsText ?? "").byteLength).toBe(
+        500 * 1024 - 1,
+      );
+      expect(robotsText).not.toContain("�");
+      expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("returns sitemap URLs listed past the crawl's page budget", async () => {
     const posts = Array.from(
       { length: 5 },

@@ -54,7 +54,7 @@ async function fetchRobotsTxtText(
       access,
     );
     if (!fetched?.response.ok) return null;
-    return (await fetched.response.text()).slice(0, MAX_ROBOTS_TXT_BYTES);
+    return await readBodyCapped(fetched.response, MAX_ROBOTS_TXT_BYTES, true);
   } catch (error) {
     console.warn("Failed to fetch robots.txt:", error);
     return null;
@@ -187,6 +187,7 @@ function isTimeoutError(error: unknown): boolean {
 async function readBodyCapped(
   response: Response,
   maxBytes: number,
+  truncate = false,
 ): Promise<string | null> {
   if (!response.body) return "";
   const reader = response.body.getReader();
@@ -195,12 +196,19 @@ async function readBodyCapped(
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
+    if (total + value.byteLength > maxBytes) {
       await reader.cancel();
-      return null;
+      if (!truncate) return null;
+      chunks.push(value.subarray(0, maxBytes - total));
+      total = maxBytes;
+      break;
     }
+    total += value.byteLength;
     chunks.push(value);
+    if (truncate && total === maxBytes) {
+      await reader.cancel();
+      break;
+    }
   }
   const joined = new Uint8Array(total);
   let offset = 0;
@@ -208,7 +216,9 @@ async function readBodyCapped(
     joined.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(joined);
+  return new TextDecoder().decode(joined, {
+    stream: truncate && total === maxBytes,
+  });
 }
 
 async function fetchSitemapDocumentWithRetry(

@@ -165,6 +165,45 @@ describe("readSite with Context usage", () => {
     expect(usage.contextCredits).toBe(0);
   });
 
+  it("cancels redirect bodies and never delegates exhausted chains", async () => {
+    const cancels: ReturnType<typeof vi.fn>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("dns-query"))
+          return Response.json({
+            Status: 0,
+            Answer: [{ type: 1, data: "93.184.216.34" }],
+          });
+        const cancel = vi.fn();
+        cancels.push(cancel);
+        return new Response(new ReadableStream({ cancel }), {
+          status: 302,
+          headers: { location: "/loop" },
+        });
+      }),
+    );
+    const usage = { cloudflareAttempts: 0, contextCredits: 0 };
+    const result = await readPages(
+      ["https://store.example.com/loop"],
+      1,
+      usage,
+    );
+    expect(result.pages).toEqual([]);
+    expect(cancels).toHaveLength(4);
+    for (const cancel of cancels) expect(cancel).toHaveBeenCalledOnce();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(([url]) =>
+          (url instanceof Request ? url.url : String(url)).includes(
+            "api.context.dev",
+          ),
+        ),
+    ).toBe(false);
+  });
+
   it("does not send a redirect to a blocked host to Context", async () => {
     const usage = { cloudflareAttempts: 0, contextCredits: 0 };
 
