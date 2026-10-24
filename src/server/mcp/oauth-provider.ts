@@ -1,36 +1,43 @@
 import { waitUntil } from "cloudflare:workers";
 import {
+  AuthorizationError,
+  OAuthError,
   OAuthProvider,
+  authorizationErrorRedirect,
   type AuthRequest,
   type OAuthHelpers,
-  type OAuthProviderOptions,
 } from "@cloudflare/workers-oauth-provider";
 import { z } from "zod";
 import { getHostedBaseUrl } from "@/lib/auth";
+import { OAUTH_AUTHORIZE_PATH } from "@/lib/auth-redirect";
 import {
   getMcpResource,
   MCP_OAUTH_SCOPES,
   MCP_SCOPE,
 } from "@/lib/oauth-resource";
 import { asAppError } from "@/server/lib/errors";
-import { recordMcpAuthorized } from "@/server/features/activation/mcpActivation";
+import {
+  completeOnboardingFromAgent,
+  recordMcpAuthorized,
+} from "@/server/features/activation/mcpActivation";
+import { markOnboardingMilestone } from "@/server/email/onboarding-drip";
 import { captureServerEvent } from "@/server/lib/posthog";
 import {
   createWorkersOAuthMcpProps,
+  MCP_AUTH_CONTEXT_PROP,
   MCP_ROUTE,
-  withWorkersOAuthMcpScopes,
+  workersOAuthMcpPropsSchema,
 } from "@/server/mcp/context";
 import { normalizeClientRegistrationRequest } from "@/server/mcp/oauth-registration";
 import { getPublicOrigin } from "@/server/mcp/public-origin";
-import { handleAuthenticatedOpenSeoMcpRequest } from "@/server/mcp/transport";
 import { resolveHostedContext } from "@/middleware/ensure-user/hosted";
+import { handleMcpApiKeyRequest } from "@/server/mcp/api-key-auth";
 
-const OAUTH_AUTHORIZE_PATH = "/api/auth/oauth2/authorize";
 const OAUTH_TOKEN_PATH = "/api/auth/oauth2/token";
 const OAUTH_REGISTER_PATH = "/api/auth/oauth2/register";
+const OAUTH_PURGE_CURSOR_KEY = "purge-cursor";
 
 const OAUTH_CONSENT_RESPONSE_PATH = "/api/oauth/consent";
-const WWW_AUTHENTICATE_HEADER = "WWW-Authenticate";
 const OAUTH_AUTHORIZATION_PARAM_NAMES = [
   "response_type",
   "client_id",
@@ -45,6 +52,7 @@ const OAUTH_AUTHORIZATION_PARAM_NAMES = [
 // preserve MCP sessions across normal usage.
 const MCP_ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24;
 const MCP_REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+const MCP_CLIENT_REGISTRATION_TTL_SECONDS = 60 * 60 * 24 * 365;
 
 export type OpenSeoOAuthEnv = Env & {
   OAUTH_KV: KVNamespace;
@@ -52,10 +60,6 @@ export type OpenSeoOAuthEnv = Env & {
 };
 
 type AppFetch = (request: Request) => Response | Promise<Response>;
-
-type OAuthExecutionContext = ExecutionContext & {
-  props?: unknown;
-};
 
 type ExportedHandlerWithFetch<Env> = ExportedHandler<Env> & {
   fetch: NonNullable<ExportedHandler<Env>["fetch"]>;
@@ -74,10 +78,6 @@ function getOAuthHelpers(env: OpenSeoOAuthEnv) {
   return env.OAUTH_PROVIDER;
 }
 
-function getMcpResourceForRequest(request: Request) {
-  return getMcpResource(getPublicOrigin(request));
-}
-
 function getRelativeRequestTarget(request: Request) {
   const url = new URL(request.url);
   return `${url.pathname}${url.search}`;
@@ -89,11 +89,12 @@ function redirectToSignIn(request: Request) {
   return Response.redirect(signInUrl.toString(), 302);
 }
 
-function invalidOAuthRequestResponse(error: unknown) {
-  return new Response(
-    error instanceof Error ? error.message : "Invalid OAuth request",
-    { status: 400 },
-  );
+function authorizationErrorResponse(error: AuthorizationError) {
+  if (!error.redirectTo) {
+    return new Response(error.description, { status: 400 });
+  }
+
+  return Response.redirect(error.redirectTo, 302);
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -106,18 +107,17 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
-function oauthErrorResponse(error: {
+function logOAuthError(error: {
   code: string;
   description: string;
   status: number;
-  headers: Record<string, string>;
 }) {
   // 401s here are the standard OAuth discovery handshake, not failures: an
   // unauthenticated /mcp hit returns `invalid_token` (which triggers the
-  // client's .well-known discovery), and the DCR client_secret_post shim makes
-  // a client's first token attempt return `invalid_client` before it retries
-  // with the secret. Log those at debug so they stop masquerading as errors;
-  // keep 5xx at error and everything else (bad client metadata, etc.) at warn.
+  // client's .well-known discovery), and stale client registrations draw
+  // `invalid_client` until the client re-registers. Log those at debug so
+  // they stop masquerading as errors; keep 5xx at error and everything else
+  // (bad client metadata, etc.) at warn.
   const line = `[oauth] ${error.status} ${error.code}: ${error.description}`;
   if (error.status === 401) {
     console.debug(line);
@@ -127,22 +127,8 @@ function oauthErrorResponse(error: {
     console.warn(line);
   }
 
-  const headers = new Headers(error.headers);
-  headers.set("Content-Type", "application/json");
-  if (headers.has(WWW_AUTHENTICATE_HEADER)) {
-    headers.set("Access-Control-Expose-Headers", WWW_AUTHENTICATE_HEADER);
-  }
-
-  return new Response(
-    JSON.stringify({
-      error: error.code,
-      error_description: error.description,
-    }),
-    {
-      status: error.status,
-      headers,
-    },
-  );
+  // Returning void delegates the standards-compliant body, bearer challenge,
+  // and CORS headers to workers-oauth-provider.
 }
 
 function csrfProtected(request: Request) {
@@ -213,29 +199,6 @@ function buildAuthorizeRequestFromConsentQuery(
   });
 }
 
-function withDefaultMcpResource(authRequest: AuthRequest, request: Request) {
-  const mcpResource = getMcpResourceForRequest(request);
-  if (!authRequest.resource) {
-    return {
-      ...authRequest,
-      resource: mcpResource,
-    };
-  }
-
-  const requestedResources = Array.isArray(authRequest.resource)
-    ? authRequest.resource
-    : [authRequest.resource];
-
-  if (requestedResources.some((resource) => resource !== mcpResource)) {
-    throw new Error(`OAuth resource must be ${mcpResource}`);
-  }
-
-  return {
-    ...authRequest,
-    resource: mcpResource,
-  };
-}
-
 function getGrantedMcpScopes(requestedScopes: string[]) {
   if (requestedScopes.length === 0) {
     return [...MCP_OAUTH_SCOPES];
@@ -251,17 +214,6 @@ function getGrantedMcpScopes(requestedScopes: string[]) {
   return granted;
 }
 
-function deniedRedirect(authRequest: AuthRequest) {
-  const redirectUrl = new URL(authRequest.redirectUri);
-  redirectUrl.searchParams.set("error", "access_denied");
-  redirectUrl.searchParams.set("error_description", "The user denied access");
-  if (authRequest.state) {
-    redirectUrl.searchParams.set("state", authRequest.state);
-  }
-
-  return redirectUrl.toString();
-}
-
 async function handleOAuthAuthorizeRequest(
   request: Request,
   env: OpenSeoOAuthEnv,
@@ -271,7 +223,10 @@ async function handleOAuthAuthorizeRequest(
   try {
     await oauth.parseAuthRequest(request);
   } catch (error) {
-    return invalidOAuthRequestResponse(error);
+    if (error instanceof AuthorizationError) {
+      return authorizationErrorResponse(error);
+    }
+    throw error;
   }
 
   const sessionBlocker = await getAuthorizeSessionBlocker(request);
@@ -313,18 +268,24 @@ async function handleOAuthConsentResponse(
   let authRequest: AuthRequest;
   try {
     authRequest = await oauth.parseAuthRequest(authorizeRequest);
-    authRequest = withDefaultMcpResource(authRequest, request);
   } catch (error) {
+    if (!(error instanceof AuthorizationError)) throw error;
     return jsonResponse(
       {
-        error: error instanceof Error ? error.message : "Invalid OAuth request",
+        error: error.description,
       },
       { status: 400 },
     );
   }
 
   if (!body.data.accept) {
-    return jsonResponse({ redirectTo: deniedRedirect(authRequest) });
+    return jsonResponse({
+      redirectTo: authorizationErrorRedirect(
+        authRequest,
+        "access_denied",
+        "The user denied access",
+      ),
+    });
   }
 
   const context = await resolveContextForConsent(request);
@@ -344,16 +305,16 @@ async function handleOAuthConsentResponse(
     );
   }
 
-  const audience = getMcpResourceForRequest(request);
+  // organizationId is only the fallback context for tools with no project
+  // argument; the hosted transport re-resolves it and stamps orgScope per
+  // request, so one authorization follows the user across every organization.
   const props = createWorkersOAuthMcpProps({
     userId: context.userId,
     userEmail: context.userEmail,
     organizationId: context.organizationId,
+    baseUrl: getHostedBaseUrl(),
     clientId: authRequest.clientId,
     scopes,
-    audience,
-    subject: context.userId,
-    baseUrl: getHostedBaseUrl(),
   });
 
   const { redirectTo } = await oauth.completeAuthorization({
@@ -368,6 +329,11 @@ async function handleOAuthConsentResponse(
   });
 
   await recordMcpAuthorized(context.organizationId);
+  // Connecting an agent is the last onboarding step, so this finishes
+  // onboarding for people who paste the setup prompt and never return to the
+  // wizard.
+  await completeOnboardingFromAgent(context, "agent_connect");
+  await markOnboardingMilestone(context, "mcpConnected");
 
   waitUntil(
     captureServerEvent({
@@ -406,17 +372,14 @@ function createDefaultHandler(
 
 const mcpApiHandler: ExportedHandlerWithFetch<OpenSeoOAuthEnv> = {
   async fetch(request, env, ctx) {
-    return handleAuthenticatedOpenSeoMcpRequest(
-      request,
-      (ctx as OAuthExecutionContext).props,
-      env,
-      ctx,
-    );
+    const { handleAuthenticatedOpenSeoMcpRequest } =
+      await import("@/server/mcp/transport");
+    return handleAuthenticatedOpenSeoMcpRequest(request, ctx.props, env, ctx);
   },
 };
 
-export function createOpenSeoOAuthProvider(appFetch: AppFetch) {
-  const options: OAuthProviderOptions<OpenSeoOAuthEnv> = {
+function createProvider(appFetch: AppFetch, resource: string) {
+  return new OAuthProvider<OpenSeoOAuthEnv>({
     apiRoute: MCP_ROUTE,
     apiHandler: mcpApiHandler,
     defaultHandler: createDefaultHandler(appFetch),
@@ -426,33 +389,74 @@ export function createOpenSeoOAuthProvider(appFetch: AppFetch) {
     scopesSupported: [...MCP_OAUTH_SCOPES],
     accessTokenTTL: MCP_ACCESS_TOKEN_TTL_SECONDS,
     refreshTokenTTL: MCP_REFRESH_TOKEN_TTL_SECONDS,
+    refreshTokenIdleTTL: MCP_REFRESH_TOKEN_TTL_SECONDS,
+    clientRegistrationTTL: MCP_CLIENT_REGISTRATION_TTL_SECONDS,
+    allowPrivateUseRedirectUris: true,
     resourceMetadata: {
-      scopes_supported: [...MCP_OAUTH_SCOPES],
+      resource,
+      scopes_supported: [MCP_SCOPE],
       resource_name: "OpenSEO MCP",
     },
     tokenExchangeCallback: ({ props, requestedScope }) => {
-      const accessTokenProps = withWorkersOAuthMcpScopes(props, requestedScope);
+      if (!requestedScope.includes(MCP_SCOPE)) {
+        throw new OAuthError("invalid_scope", {
+          description: "The mcp scope is required",
+        });
+      }
 
-      return accessTokenProps ? { accessTokenProps } : undefined;
+      const authContext =
+        workersOAuthMcpPropsSchema.parse(props)[MCP_AUTH_CONTEXT_PROP];
+      return {
+        accessTokenProps: createWorkersOAuthMcpProps({
+          ...authContext,
+          scopes: requestedScope,
+        }),
+      };
     },
-    onError: oauthErrorResponse,
-  };
+    onError: logOAuthError,
+  });
+}
 
-  const provider = new OAuthProvider(options);
+export function createOpenSeoOAuthProvider(appFetch: AppFetch) {
+  // Built lazily because the canonical resource comes from BETTER_AUTH_URL,
+  // which is not readable at module-init time. It is the same base URL the
+  // consent handler stamps into grant props.
+  let provider: OAuthProvider<OpenSeoOAuthEnv> | undefined;
+  const getProvider = () =>
+    (provider ??= createProvider(appFetch, getMcpResource(getHostedBaseUrl())));
 
   return {
     async fetch(request: Request, env: OpenSeoOAuthEnv, ctx: ExecutionContext) {
       const url = new URL(request.url);
 
+      const apiKeyResponse = await handleMcpApiKeyRequest(request, env, ctx);
+      if (apiKeyResponse) return apiKeyResponse;
+
       if (url.pathname === OAUTH_REGISTER_PATH) {
-        // Cloudflare's provider can reject public DCR clients, but Perplexity
-        // does not appear to retry as confidential and instead expects a
-        // client_secret. Normalize before handing the request to Cloudflare so
-        // it still owns client creation, secret hashing, and token storage.
-        request = await normalizeClientRegistrationRequest(request);
+        return getProvider().fetch(
+          await normalizeClientRegistrationRequest(request),
+          env,
+          ctx,
+        );
       }
 
-      return provider.fetch(request, env, ctx);
+      return getProvider().fetch(request, env, ctx);
+    },
+
+    // Resume the bounded sweep across cron runs, including past live records.
+    async purgeExpiredData(env: OpenSeoOAuthEnv) {
+      const cursor =
+        (await env.OAUTH_KV.get(OAUTH_PURGE_CURSOR_KEY)) ?? undefined;
+      const result = await getProvider().purgeExpiredData(env, {
+        batchSize: 200,
+        cursor,
+      });
+      if (result.cursor) {
+        await env.OAUTH_KV.put(OAUTH_PURGE_CURSOR_KEY, result.cursor);
+      } else {
+        await env.OAUTH_KV.delete(OAUTH_PURGE_CURSOR_KEY);
+      }
+      return result;
     },
   };
 }

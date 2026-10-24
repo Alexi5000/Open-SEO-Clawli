@@ -21,6 +21,11 @@ export type FeaturePage = {
   showMetrics?: boolean;
   useCases: string[];
   differentiators: string[];
+  featuredLink?: {
+    title: string;
+    description: string;
+    href: string;
+  };
   related: Array<{
     label: string;
     href: string;
@@ -30,22 +35,14 @@ export type FeaturePage = {
     answer: string;
   }>;
   guides?: {
-    eyebrow: string;
     title: string;
     description: string;
     items: Array<{
       label: string;
-      by: string;
-      href?: string;
+      description: string;
+      href: string;
     }>;
     cta: {
-      label: string;
-      href: string;
-    };
-    download: {
-      eyebrow: string;
-      title: string;
-      description: string;
       label: string;
       href: string;
     };
@@ -103,6 +100,12 @@ export const featurePages = {
       "DataForSEO-backed metrics without locking the research process into a black box.",
       "MCP access so AI agents can research and save keywords for you.",
     ],
+    featuredLink: {
+      title: "Free competitor analysis tool",
+      description:
+        "Pull a competitor's top organic keywords and the terms they rank for that you don't. No signup required.",
+      href: "/competitor-analysis",
+    },
     related: [
       { label: "Keyword Clustering", href: "/docs/skills/keyword-clustering" },
       {
@@ -120,7 +123,7 @@ export const featurePages = {
       {
         question: "Can I use OpenSEO as a free keyword research tool?",
         answer:
-          "OpenSEO is open source and can be self-hosted. The managed app also keeps keyword research tied to transparent usage instead of a large fixed subscription to a closed SEO suite.",
+          "Not unlimited: quality keyword data costs money everywhere, which is why the big SEO suites run $100/month and up. You can start OpenSEO for free; the paid plan is $10/month with usage credits included. It's also open source, so you can self-host with your own DataForSEO account.",
       },
       {
         question: "Does OpenSEO show live search results?",
@@ -129,59 +132,37 @@ export const featurePages = {
       },
     ],
     guides: {
-      eyebrow: "The practitioner playbook",
       title: "The Keyword Research Strategy Library",
       description:
-        "Eight field-tested plays for finding demand that converts, each drawn from a working SEO on the Unscripted podcast, with the workflow and who endorses it. Free, and built to be run inside OpenSEO.",
+        "Practitioner strategies for using keyword research to discover demand. Each guide includes a full walkthrough and a copy-paste MCP prompt.",
       items: [
         {
           label: "Seed from conversation, not a volume report",
-          by: "Slaymaker · Bajayo · Digneo",
+          description:
+            "Harvest seed keywords from sales calls and support tickets.",
           href: "/library/keyword-research/seed-from-conversation",
         },
         {
-          label: "Long-tail & question mining (PAA, query fan-out)",
-          by: "Baterina · Moser · Barnard",
+          label: "What are long-tail keywords, and how to mine them",
+          description:
+            "PAA fan-out, autocomplete harvesting, and your own GSC queries.",
           href: "/library/keyword-research/long-tail-question-mining",
         },
         {
           label: "Search-intent mapping (hot / warm / cold)",
-          by: "Merrilees · Ashford",
+          description: "Sort keywords by buying temperature before you write.",
           href: "/library/keyword-research/search-intent-mapping",
         },
         {
-          label: "Opportunity sizing & forecasting",
-          by: "Rivera · Berkowitz · Baterina",
-        },
-        {
-          label: "Programmatic & data-driven discovery (GSC)",
-          by: "Rivera · Simmons",
-        },
-        {
           label: "Cluster keywords into topical hubs",
-          by: "Simmons · Homer",
+          description:
+            "One page per intent, plus the keyword cannibalization fix.",
           href: "/library/keyword-research/cluster-topical-hubs",
-        },
-        {
-          label: "Intent beyond Google (Pinterest, AI, LinkedIn)",
-          by: "Bocchese · Alfon · Popp",
-        },
-        {
-          label: "Make positioning map to real demand",
-          by: "Little · Popp · Homer",
         },
       ],
       cta: {
-        label: "Open the full library",
+        label: "Browse all keyword research strategies",
         href: "/library/keyword-research",
-      },
-      download: {
-        eyebrow: "Free download",
-        title: "The Keyword Research Playbook",
-        description:
-          "All 8 plays in one designed PDF: workflows, the practitioner quotes behind them, and a seed-to-brief checklist.",
-        label: "Download the PDF",
-        href: "/library/keyword-research/keyword-research-playbook.pdf",
       },
     },
   },
@@ -235,21 +216,27 @@ export const featurePages = {
       "Open-source implementation for teams that want to inspect or extend the audit flow.",
       "Simple reports that expose page-level signals and optional Lighthouse findings instead of relying only on a generic score.",
     ],
+    featuredLink: {
+      title: "Free SERP simulator",
+      description:
+        "Preview how a title and meta description render on Google, with pixel widths. No signup required.",
+      href: "/serp-simulator",
+    },
     related: [
       { label: "Domain Overview", href: "/features/domain-overview" },
-      { label: "Backlink Checker", href: "/features/backlink-checker" },
+      { label: "Backlinks", href: "/features/backlink-checker" },
       { label: "Keyword Research", href: "/features/keyword-research" },
     ],
     faqs: [
       {
         question: "What does the OpenSEO site audit tool check?",
         answer:
-          "OpenSEO crawls pages, shows page-level technical signals, and can attach Lighthouse issue details when Lighthouse is enabled.",
+          "Status codes, titles, meta descriptions, headings, indexability signals, image alt coverage, links, and response time for every crawled page. Enable Lighthouse and each page also gets performance, SEO, accessibility, and best-practice issues.",
       },
       {
         question: "Is OpenSEO a free SEO audit tool?",
         answer:
-          "OpenSEO is open source and can be self-hosted. Managed usage depends on the crawl and data costs behind each workflow.",
+          "For smaller sites, yes: the free plan includes site audits up to 50 pages per crawl. Larger crawls need a paid plan, starting at $10/month. OpenSEO is also open source and self-hostable.",
       },
       {
         question: "Who should use OpenSEO Site Audit?",
@@ -257,19 +244,48 @@ export const featurePages = {
           "It is useful for founders, marketers, agencies, and developers who need a shared crawl report and optional Lighthouse issue export.",
       },
     ],
+    guides: {
+      title: "The Site Audit Strategy Library",
+      description:
+        "Practitioner strategies for turning a crawl into scheduled work. Each guide includes a full walkthrough and a copy-paste MCP prompt.",
+      items: [
+        {
+          label: "The technical SEO audit checklist that ends in fixes",
+          description:
+            "Triage 1,180 findings down to the 35 that stop a page being seen.",
+          href: "/library/site-audit/technical-seo-audit-checklist",
+        },
+        {
+          label: "Write an audit report the client will actually act on",
+          description:
+            "Six sections that tie each finding to a page, a cost, and an owner.",
+          href: "/library/site-audit/seo-audit-report-template",
+        },
+        {
+          label: "Index bloat: when the fix is deleting pages",
+          description:
+            "Check what Google actually indexed before you remove anything.",
+          href: "/library/site-audit/index-bloat",
+        },
+      ],
+      cta: {
+        label: "Browse all site audit strategies",
+        href: "/library/site-audit",
+      },
+    },
   },
-  backlinkChecker: {
-    slug: FEATURE_PAGE_SLUGS.backlinkChecker,
+  backlinks: {
+    slug: FEATURE_PAGE_SLUGS.backlinks,
     eyebrow: "Backlinks",
     navDescription: "Check links and referring domains.",
     title: "Backlink checker for understanding a domain's link profile",
     description:
       "Analyze backlinks, referring domains, and linked pages without separating link research from the rest of your SEO workspace.",
-    primaryKeyword: "backlink checker",
+    primaryKeyword: "backlink analysis",
     secondaryKeywords: [
-      "free backlink checker",
       "backlink analysis tool",
-      "google backlink checker",
+      "referring domains",
+      "link profile",
     ],
     imageAlt: "OpenSEO backlinks report",
     imageSrc:
@@ -308,29 +324,63 @@ export const featurePages = {
       "Self-host or adapt backlink reporting for your team's workflow.",
       "MCP support lets an AI agent pull backlink context during SEO research.",
     ],
+    guides: {
+      title: "The Link Building Strategy Library",
+      description:
+        "Practitioner strategies for reading a backlink profile and earning links that count. Each guide includes a full walkthrough and a copy-paste MCP prompt.",
+      items: [
+        {
+          label: "The backlink audit",
+          description:
+            "Sort by first seen, bucket the junk, read the rows that matter.",
+          href: "/library/link-building/backlink-audit",
+        },
+        {
+          label: "Referring domains, not backlinks",
+          description:
+            "The count to report, and what the top of the list is made of.",
+          href: "/library/link-building/referring-domains",
+        },
+        {
+          label: "How to get backlinks",
+          description:
+            "Start from the pages that already earn them. Four plays from the podcast.",
+          href: "/library/link-building/how-to-get-backlinks",
+        },
+      ],
+      cta: {
+        label: "Browse all link building strategies",
+        href: "/library/link-building",
+      },
+    },
+    featuredLink: {
+      title: "Free backlink checker",
+      description:
+        "Check any domain's backlink summary and top 15 backlinks. No signup required.",
+      href: "/backlink-checker",
+    },
     related: [
       {
         label: "Link Prospecting",
         href: "/docs/skills/link-prospecting",
       },
       { label: "Domain Overview", href: "/features/domain-overview" },
-      { label: "OpenSEO MCP", href: "/features/mcp" },
     ],
     faqs: [
       {
-        question: "What is a backlink checker used for?",
+        question: "What is backlink analysis used for?",
         answer:
-          "A backlink checker helps you understand which sites link to a domain or page, which links have stronger rank, spam, broken, lost, or nofollow signals, and where competitors are earning authority.",
+          "Backlink analysis helps you understand which sites link to a domain or page, which links have stronger rank, spam, broken, lost, or nofollow signals, and where competitors are earning authority.",
       },
       {
         question: "Can I check competitor backlinks in OpenSEO?",
         answer:
-          "Yes. OpenSEO's backlink workflow is designed for researching your own domain as well as competitor domains.",
+          "Yes. Enter any domain, yours or a competitor's, and pull its backlinks, referring domains, and top linked pages.",
       },
       {
         question: "How does backlink research connect to SEO planning?",
         answer:
-          "Backlinks add link-profile context that can inform link-building, digital PR, and competitor research alongside your keyword work.",
+          "Backlinks tell you whether a page ranks on content or on authority. Check them before targeting a keyword to judge whether you can realistically outrank the incumbents, and check a competitor's profile to find sites that might link to you too.",
       },
     ],
   },
@@ -384,13 +434,19 @@ export const featurePages = {
       "Built around ranking keywords, estimated traffic, and top pages for practical competitor research.",
       "Open-source and self-hostable for teams that want control over their SEO stack.",
     ],
+    featuredLink: {
+      title: "Free website traffic checker",
+      description:
+        "Estimate any domain's organic traffic, keywords, and top pages. No signup required.",
+      href: "/website-traffic-checker",
+    },
     related: [
       {
         label: "Competitor Analysis",
         href: "/docs/skills/competitor-analysis",
       },
       { label: "Keyword Research", href: "/features/keyword-research" },
-      { label: "Backlink Checker", href: "/features/backlink-checker" },
+      { label: "Backlinks", href: "/features/backlink-checker" },
     ],
     faqs: [
       {
@@ -406,14 +462,49 @@ export const featurePages = {
       {
         question: "Can OpenSEO help with competitor keyword analysis?",
         answer:
-          "Yes. Domain Overview is designed to reveal the keywords and topics a competitor is already visible for.",
+          "Yes. Enter a competitor's domain and you get the keywords it ranks for and its top organic pages: the raw material for finding topics worth building or defending.",
       },
       {
         question: "Is Domain Overview the same as a traffic checker?",
         answer:
-          "It includes traffic-oriented visibility metrics, but the bigger value is connecting that traffic estimate to ranking keywords and top pages.",
+          "Not quite. It includes an estimated-traffic metric, but the value is seeing which keywords and pages produce that traffic, which a plain traffic checker doesn't show.",
       },
     ],
+    guides: {
+      title: "The Competitive Analysis Strategy Library",
+      description:
+        "Practitioner strategies for turning a domain overview into a decision. Each guide includes a full walkthrough and a copy-paste MCP prompt.",
+      items: [
+        {
+          label: "Find out who your real competitors are",
+          description:
+            "Compare a keyword set and read the domains actually in your SERPs.",
+          href: "/library/competitive-analysis/find-your-real-competitors",
+        },
+        {
+          label: "Keyword gap analysis: subtract the brand terms first",
+          description:
+            "Strip brand from both sides and the gap becomes buildable.",
+          href: "/library/competitive-analysis/keyword-gap-analysis",
+        },
+        {
+          label: "How accurate are competitor traffic estimates?",
+          description:
+            "Close-variant stacking, other business lines, and how to correct for both.",
+          href: "/library/competitive-analysis/competitor-traffic-estimates",
+        },
+        {
+          label: "Read a competitor's link profile before you copy it",
+          description:
+            "Referring domains, spam score, and the broken links worth chasing.",
+          href: "/library/competitive-analysis/backlink-gap-analysis",
+        },
+      ],
+      cta: {
+        label: "Browse all competitive analysis strategies",
+        href: "/library/competitive-analysis",
+      },
+    },
   },
   rankTracking: {
     slug: FEATURE_PAGE_SLUGS.rankTracking,
@@ -465,6 +556,12 @@ export const featurePages = {
       "Optional desktop and mobile tracking helps teams avoid one-dimensional rank reports.",
       "OpenSEO can expose ranking data to AI agents through MCP.",
     ],
+    featuredLink: {
+      title: "Free competitor keyword finder",
+      description:
+        "Find the keywords a competitor ranks for before choosing what to track. No signup required.",
+      href: "/competitor-keyword-finder",
+    },
     related: [
       { label: "Keyword Clustering", href: "/docs/skills/keyword-clustering" },
       {
@@ -482,7 +579,7 @@ export const featurePages = {
       {
         question: "Does OpenSEO track mobile and desktop rankings?",
         answer:
-          "OpenSEO rank tracking can be configured for mobile, desktop, or both, so teams can compare devices when both are enabled.",
+          "Yes: mobile, desktop, or both. Each tracked domain is configured with the devices you want, and enabling both lets you compare them side by side.",
       },
       {
         question: "How should I choose keywords to track?",
@@ -490,6 +587,40 @@ export const featurePages = {
           "Start with keywords tied to important pages, active content work, and competitor opportunities discovered in keyword research.",
       },
     ],
+    guides: {
+      title: "The Rank Tracking Strategy Library",
+      description:
+        "Practitioner strategies for tracking what matters and reporting it so it gets read. Each guide includes a full walkthrough and a copy-paste MCP prompt.",
+      items: [
+        {
+          label: "Which keywords to track, and how many",
+          description:
+            "Twenty to fifty terms from Search Console, priced before they go in.",
+          href: "/library/rank-tracking/which-keywords-to-track",
+        },
+        {
+          label: "Is Search Console a rank tracker?",
+          description:
+            "What the free average position hides, and when it is enough.",
+          href: "/library/rank-tracking/search-console-vs-rank-tracker",
+        },
+        {
+          label: "Local rank tracking",
+          description: "Why a local business needs a grid before a tracker.",
+          href: "/library/rank-tracking/local-rank-tracking",
+        },
+        {
+          label: "The keyword ranking report your CEO will read",
+          description:
+            "Lead with the business number and use rankings to explain it.",
+          href: "/library/rank-tracking/keyword-ranking-report",
+        },
+      ],
+      cta: {
+        label: "Browse all rank tracking strategies",
+        href: "/library/rank-tracking",
+      },
+    },
   },
   savedKeywords: {
     slug: FEATURE_PAGE_SLUGS.savedKeywords,
@@ -559,17 +690,17 @@ export const featurePages = {
       {
         question: "How do saved keywords fit into SEO planning?",
         answer:
-          "Saved Keywords keeps promising ideas organized so they can inform content planning, rank tracking decisions, and future research.",
+          "Research fills the list, tags group it into pages and campaigns, and the shortlist feeds rank tracking. Saved keywords are the bridge between finding an opportunity and acting on it.",
       },
     ],
   },
   aiBrandVisibility: {
     slug: FEATURE_PAGE_SLUGS.aiBrandVisibility,
     eyebrow: "AI Visibility",
-    navDescription: "Look up brand mentions in AI search.",
-    title: "Brand lookup for ChatGPT and Google AI Overview visibility",
+    navDescription: "Research prompts and track mentions and citations.",
+    title: "Track your brand in AI answers",
     description:
-      "Look up a brand or domain and review ChatGPT and Google AI Overview mentions, cited pages, and related prompts.",
+      "Research prompts, then track brand mentions, cited pages, and competitor appearances in ChatGPT, Gemini, and Google AI Overviews.",
     primaryKeyword: "ai visibility tool",
     secondaryKeywords: [
       "brand visibility ai search",
@@ -581,19 +712,19 @@ export const featurePages = {
       "https://imagedelivery.net/ysLOa6bzFaM49Jxok-TAlw/cde3e4f8-079f-4890-cb17-371087107400/public",
     workflows: [
       {
-        title: "Look up a brand",
+        title: "Research prompts",
         description:
-          "Search for a brand or domain and inspect how ChatGPT and Google AI Overview mention or cite it in available results.",
+          "Find the questions people ask about a keyword, see what ChatGPT answers and cites, and choose questions to track.",
       },
       {
-        title: "Review citations and platforms",
+        title: "Track answers over time",
         description:
-          "Review the URLs, domains, and platforms contributing to brand mentions.",
+          "Preview cost, then run a check or schedule daily, weekly, or monthly collection in your selected market.",
       },
       {
-        title: "Find visibility gaps",
+        title: "Review competitors and citations",
         description:
-          "Use cited pages and related prompts as clues for content, reputation, or comparison coverage to investigate.",
+          "Use your saved project competitors and captured answers to see which brands and pages appear.",
       },
     ],
     metrics: [
@@ -603,7 +734,7 @@ export const featurePages = {
       { label: "Cited domains", value: "Sources" },
     ],
     useCases: [
-      "See whether ChatGPT and Google AI Overview data mention or cite your brand or domain.",
+      "See whether tracked ChatGPT, Gemini, and Google AI Overviews answers mention your brand or cite your website.",
       "Find pages and domains cited alongside brand mentions.",
       "Use cited sources and prompts to plan content experiments for answer-engine visibility.",
     ],
@@ -613,7 +744,8 @@ export const featurePages = {
       "OpenSEO helps teams connect AI mention and citation research to concrete SEO planning.",
     ],
     related: [
-      { label: "AI Search Prompts", href: "/features/ai-search-prompts" },
+      { label: "AI Visibility Guide", href: "/docs/ai-visibility" },
+      { label: "Prompt Explorer", href: "/features/ai-search-prompts" },
       { label: "Domain Overview", href: "/features/domain-overview" },
       { label: "OpenSEO MCP", href: "/features/mcp" },
     ],
@@ -621,7 +753,7 @@ export const featurePages = {
       {
         question: "What is AI brand visibility?",
         answer:
-          "AI brand visibility is how often your brand or domain appears in available ChatGPT and Google AI Overview mention and citation data.",
+          "It describes brand mentions and website citations in the prompts, engines, and market you track. It does not measure every AI conversation or traffic to your site.",
       },
       {
         question: "How is AI visibility different from traditional SEO?",
@@ -641,7 +773,7 @@ export const featurePages = {
     navDescription: "Compare answers across supported models.",
     title: "AI search prompt explorer for visibility research",
     description:
-      "Run the same prompt across supported AI models, compare the answers, and review citations when they are returned.",
+      "Start with ChatGPT, or add Claude, Gemini, and Perplexity to compare API model answers and available citations.",
     primaryKeyword: "ai search visibility",
     secondaryKeywords: [
       "chatgpt search visibility",
@@ -680,12 +812,12 @@ export const featurePages = {
       "Check whether a brand appears in AI answers and citations.",
     ],
     differentiators: [
-      "Prompt research lives in the same workspace as domain, keyword, and brand visibility workflows.",
+      "Prompt Explorer lives beside Prompt Research and Prompt Tracking in your project.",
       "OpenSEO treats AI search as a research layer, not a replacement for SEO fundamentals.",
-      "OpenSEO MCP exposes keyword, SERP, domain, backlink, saved keyword, and rank-tracking tools to AI agents.",
+      "OpenSEO MCP lets your agent explore prompts and work with saved AI visibility results.",
     ],
     related: [
-      { label: "AI Brand Visibility", href: "/features/ai-brand-visibility" },
+      { label: "AI Visibility", href: "/features/ai-brand-visibility" },
       { label: "Keyword Research", href: "/features/keyword-research" },
       { label: "OpenSEO MCP", href: "/features/mcp" },
     ],
@@ -698,7 +830,7 @@ export const featurePages = {
       {
         question: "Why does prompt research matter for SEO?",
         answer:
-          "Prompts reveal comparison, problem, and buying questions that can inform pages, guides, and the pages or domains that appear in returned citations.",
+          "Prompts are the new queries: they show the comparison, problem, and buying questions your customers now ask AI tools. The cited sources show which pages and domains those answers are built on, so you can see where your coverage is missing.",
       },
       {
         question: "Can this help with answer engine optimization?",
@@ -724,7 +856,7 @@ export const featureGroups = [
     description: "Understand competitors, backlinks, and technical health.",
     pages: [
       featurePages.domainOverview,
-      featurePages.backlinkChecker,
+      featurePages.backlinks,
       featurePages.siteAudit,
     ],
   },

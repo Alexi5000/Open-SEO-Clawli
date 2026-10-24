@@ -18,6 +18,8 @@ import {
   getOptionalEnvValue,
   isHostedServerAuthMode,
 } from "@/server/lib/runtime-env";
+import { getSetupIssueSummary } from "@/server/lib/setup-status";
+import { isTelemetryOptOutValue } from "@/shared/selfhost-checks";
 
 const SELF_HOST_POSTHOG_KEY =
   "phc_xaXj4vE4LikxfvR7q6EHemAYNBSZW4hQkqor7fpf8aGT";
@@ -36,13 +38,13 @@ const ONBOARDING_CHECK_INTERVAL_MS = 60 * 1000;
 const STEADY_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const TELEMETRY_STATE_ID = 1;
 
-export function getHeartbeatIntervalMs(installAgeMs: number) {
+function getHeartbeatIntervalMs(installAgeMs: number) {
   return installAgeMs < ONBOARDING_WINDOW_MS
     ? ONBOARDING_HEARTBEAT_INTERVAL_MS
     : DAILY_HEARTBEAT_INTERVAL_MS;
 }
 
-export function getCheckIntervalMs(installAgeMs: number | null) {
+function getCheckIntervalMs(installAgeMs: number | null) {
   if (installAgeMs === null) return 0;
   return installAgeMs < ONBOARDING_WINDOW_MS
     ? ONBOARDING_CHECK_INTERVAL_MS
@@ -75,6 +77,9 @@ type HeartbeatProperties = HeartbeatCounts & {
   firstRun: boolean;
   minutesSinceInstall?: number;
   mcpToolCalls: number;
+  // Unhealthy setup checks as "check:status" pairs (e.g. "dataforseo:error").
+  // Enumerable values only — never free-text detail.
+  setupIssues: string[];
   $process_person_profile: false;
 };
 
@@ -83,6 +88,7 @@ export type SelfHostTelemetryDependencies = {
   isNonProductionBuild: () => boolean;
   claimHeartbeat: (now: Date) => Promise<ClaimedHeartbeat | null>;
   collectCounts: () => Promise<HeartbeatCounts>;
+  collectSetupIssues: () => Promise<string[]>;
   sendHeartbeat: (
     installId: string,
     properties: HeartbeatProperties,
@@ -106,17 +112,29 @@ let lastCheckedAt: number | null = null;
 // check interval without a DB read. Epoch 0 marks "old install, age unknown".
 let cachedInstalledAt: Date | null = null;
 
-// Only production builds report: this excludes `vite dev`, vitest, and
-// preview deployments (`vite build --mode preview`), whose per-PR databases
-// would otherwise each register as a fresh self-host install.
+// Docker uses the default production mode; deploy:selfhost builds with the
+// selfhost mode to load .env.selfhost. Both report, but dev/test and preview
+// deployments must not register as installs.
 function isNonProductionBuild() {
-  return import.meta.env.MODE !== "production";
+  return (
+    !import.meta.env.PROD ||
+    (import.meta.env.MODE !== "production" &&
+      import.meta.env.MODE !== "selfhost")
+  );
 }
 
 async function telemetryIsDisabled() {
   if (await isHostedServerAuthMode()) return true;
-  if (await getOptionalEnvValue("OPENSEO_TELEMETRY_DISABLED")) return true;
-  if (await getOptionalEnvValue("DO_NOT_TRACK")) return true;
+  if (
+    isTelemetryOptOutValue(
+      await getOptionalEnvValue("OPENSEO_TELEMETRY_DISABLED"),
+    )
+  ) {
+    return true;
+  }
+  if (isTelemetryOptOutValue(await getOptionalEnvValue("DO_NOT_TRACK"))) {
+    return true;
+  }
   return false;
 }
 
@@ -254,6 +272,7 @@ const productionDependencies: SelfHostTelemetryDependencies = {
   isNonProductionBuild,
   claimHeartbeat,
   collectCounts,
+  collectSetupIssues: getSetupIssueSummary,
   sendHeartbeat,
   markHeartbeatSent,
   getDbBackend: getDatabaseProvider,
@@ -261,8 +280,13 @@ const productionDependencies: SelfHostTelemetryDependencies = {
 };
 
 export async function maybeSendSelfHostHeartbeat(
+  pathname: string,
   options: SelfHostTelemetryOptions = {},
 ) {
+  // Docker probes this endpoint every 30 seconds. Probes must not create an
+  // install, consume its heartbeat interval, or keep an idle install active.
+  if (pathname === "/api/health" || pathname === "/api/health/") return;
+
   try {
     if (await telemetryIsDisabled()) return;
 
@@ -290,6 +314,7 @@ export async function maybeSendSelfHostHeartbeat(
 
     const authMode = getAuthMode(await getOptionalEnvValue("AUTH_MODE"));
     const counts = await dependencies.collectCounts();
+    const setupIssues = await dependencies.collectSetupIssues();
     const prevVersion =
       state.lastVersion && state.lastVersion !== dependencies.version
         ? state.lastVersion
@@ -308,6 +333,7 @@ export async function maybeSendSelfHostHeartbeat(
       ...(minutesSinceInstall === undefined ? {} : { minutesSinceInstall }),
       ...counts,
       mcpToolCalls: state.mcpToolCallCount,
+      setupIssues,
       $process_person_profile: false,
     });
     await dependencies.markHeartbeatSent(
