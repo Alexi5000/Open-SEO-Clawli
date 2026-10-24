@@ -5,6 +5,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => options,
 }));
 import { Route } from "../src/routes/js/meta[.]js";
+import { env } from "cloudflare:workers";
 
 const route = Route as unknown as {
   server: { handlers: { GET: (args: { request: Request }) => Response } };
@@ -22,6 +23,11 @@ async function servesPixel(country: string, headers = {}) {
 }
 
 describe("/js/meta.js", () => {
+  it("rejects a malformed configured pixel identifier", async () => {
+    Reflect.set(env, "META_PIXEL_ID", "123);alert(1)//");
+    try { expect(await servesPixel("US")).toBe(false); }
+    finally { Reflect.set(env, "META_PIXEL_ID", "123"); }
+  });
   it("serves the pixel only where the visitor's advertising choice allows it", async () => {
     // The full set of region and saved-choice cases is in
     // src/shared/privacy-choices.test.ts; this covers the route's inputs.

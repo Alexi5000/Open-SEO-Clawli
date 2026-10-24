@@ -28,11 +28,25 @@ export async function normalizeClientRegistrationRequest(request: Request) {
 
   let rawMetadata: unknown;
   try {
-    const text = await request.clone().text();
-    if (text.length > MAX_CLIENT_REGISTRATION_BODY_BYTES) {
-      // Match the provider's 1 MiB guard before parsing so the compatibility
-      // shim cannot consume unusually large DCR payloads first.
-      return request;
+    const reader = request.clone().body?.getReader();
+    if (!reader) return request;
+    let text = "";
+    let size = 0;
+    const decoder = new TextDecoder();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_CLIENT_REGISTRATION_BODY_BYTES) {
+          void reader.cancel().catch(() => {});
+          return request;
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+    } finally {
+      reader.releaseLock();
     }
 
     rawMetadata = JSON.parse(text);
@@ -48,7 +62,9 @@ export async function normalizeClientRegistrationRequest(request: Request) {
   // Perplexity requires a client secret, so let the provider create and store a
   // real one. Other MCP clients that omit the method are public clients: some
   // discard DCR secrets and would otherwise fail their first token refresh.
-  const isPerplexity = parsed.data.redirect_uris?.includes(PERPLEXITY_CALLBACK);
+  const isPerplexity = parsed.data.redirect_uris?.some(
+    (uri) => uri === PERPLEXITY_CALLBACK,
+  );
   const metadata = {
     ...parsed.data,
     token_endpoint_auth_method: isPerplexity

@@ -3,7 +3,15 @@
  * location registry (cached on disk) and the sandbox probe that tells us
  * whether a location_name will be accepted by the live SERP endpoints.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { probeSerpLocation } from "@/server/lib/dataforseo/serp-location-validate";
@@ -30,12 +38,26 @@ export async function fetchRegistry(
   iso: string,
   cacheDir: string,
 ): Promise<SerpRegistryLocation[]> {
-  mkdirSync(cacheDir, { recursive: true });
+  if (!/^[a-z]{2}$/i.test(iso)) throw new Error("Invalid country code");
+  mkdirSync(cacheDir, { recursive: true, mode: 0o700 });
   const cachePath = join(cacheDir, `serp-locations-${iso}.json`);
-  if (existsSync(cachePath)) {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(
+      cachePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile() || stat.size > 10 * 1024 * 1024)
+      throw new Error("Invalid registry cache");
     return JSON.parse(
-      readFileSync(cachePath, "utf8"),
+      readFileSync(descriptor, "utf8"),
     ) as SerpRegistryLocation[];
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+      throw error;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
   }
   const response = await fetch(
     `https://api.dataforseo.com/v3/serp/google/locations/${encodeURIComponent(iso)}`,
@@ -61,7 +83,23 @@ export async function fetchRegistry(
       locationName: item.location_name,
       locationType: item.location_type ?? "",
     }));
-  writeFileSync(cachePath, JSON.stringify(registry));
+  let output: number | undefined;
+  try {
+    output = openSync(
+      cachePath,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+    writeFileSync(output, JSON.stringify(registry));
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EEXIST"))
+      throw error;
+  } finally {
+    if (output !== undefined) closeSync(output);
+  }
   return registry;
 }
 
