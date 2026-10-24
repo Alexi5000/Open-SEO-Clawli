@@ -19,7 +19,9 @@ export function asAppError(error: unknown): AppError | null {
   return null;
 }
 
+// The client only ever receives the bare code. Server messages can carry
+// internal detail, so the client maps each code to its own copy and the full
+// message stays in the server logs.
 export function toClientError(error: unknown): Error {
-  const appError = asAppError(error);
-  return new Error(appError?.code ?? "INTERNAL_ERROR");
+  return new Error(asAppError(error)?.code ?? "INTERNAL_ERROR");
 }

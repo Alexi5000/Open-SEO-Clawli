@@ -2,45 +2,38 @@ import { describe, expect, it } from "vitest";
 import { normalizeClientRegistrationRequest } from "@/server/mcp/oauth-registration";
 
 describe("normalizeClientRegistrationRequest", () => {
-  it("converts public dynamic registration requests to confidential clients", async () => {
-    const request = new Request(
-      "https://app.openseo.so/api/auth/oauth2/register",
-      {
+  it.each([
+    ["https://www.perplexity.ai/api/mcp/oauth/callback", "client_secret_post"],
+    [
+      "https://evil.test/https://www.perplexity.ai/api/mcp/oauth/callback",
+      "none",
+    ],
+    ["https://www.perplexity.ai/api/mcp/oauth/callback.evil", "none"],
+  ])("matches the exact callback %s", async (uri, method) => {
+    const normalized = await normalizeClientRegistrationRequest(
+      new Request("https://app.openseo.so/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          redirect_uris: ["https://www.perplexity.ai/api/mcp/oauth/callback"],
-          client_name: "Perplexity",
-          token_endpoint_auth_method: "none",
-        }),
-      },
+        body: JSON.stringify({ redirect_uris: [uri] }),
+      }),
     );
-
-    const normalized = await normalizeClientRegistrationRequest(request);
-
-    await expect(normalized.json()).resolves.toMatchObject({
-      token_endpoint_auth_method: "client_secret_post",
+    expect(await normalized.json()).toMatchObject({
+      token_endpoint_auth_method: method,
     });
   });
 
-  it("defaults omitted token auth methods to confidential clients", async () => {
-    const request = new Request(
-      "https://app.openseo.so/api/auth/oauth2/register",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          redirect_uris: ["https://www.perplexity.ai/api/mcp/oauth/callback"],
-          client_name: "Perplexity",
-        }),
+  it("stops buffering an oversized registration stream", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024 + 1));
       },
-    );
-
-    const normalized = await normalizeClientRegistrationRequest(request);
-
-    await expect(normalized.json()).resolves.toMatchObject({
-      token_endpoint_auth_method: "client_secret_post",
     });
+    const request = new Request("https://app.openseo.so/register", {
+      method: "POST",
+      body,
+      duplex: "half",
+    } as RequestInit);
+    expect(await normalizeClientRegistrationRequest(request)).toBe(request);
+    await request.body?.cancel();
   });
 
   it("keeps explicit confidential registration methods", async () => {
@@ -61,28 +54,5 @@ describe("normalizeClientRegistrationRequest", () => {
     await expect(normalized.json()).resolves.toMatchObject({
       token_endpoint_auth_method: "client_secret_post",
     });
-  });
-
-  it("leaves oversized registration payloads for the provider to reject", async () => {
-    const body = JSON.stringify({
-      redirect_uris: ["https://www.perplexity.ai/api/mcp/oauth/callback"],
-      client_name: "a".repeat(1024 * 1024),
-      token_endpoint_auth_method: "none",
-    });
-    const request = new Request(
-      "https://app.openseo.so/api/auth/oauth2/register",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": String(body.length),
-        },
-        body,
-      },
-    );
-
-    await expect(normalizeClientRegistrationRequest(request)).resolves.toBe(
-      request,
-    );
   });
 });

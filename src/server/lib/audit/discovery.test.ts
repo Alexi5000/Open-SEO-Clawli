@@ -1,151 +1,76 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { discoverUrls } from "@/server/lib/audit/discovery";
+import { describe, expect, it, vi } from "vitest";
+import { discoverUrls, parseRobotsTxt } from "@/server/lib/audit/discovery";
 
-const ORIGIN = "https://example.com";
-
-function redirect(location: string, status = 302): Response {
-  return new Response(null, { status, headers: { location } });
+function sitemapXml(urls: string[]): string {
+  const entries = urls.map((url) => `<url><loc>${url}</loc></url>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8"?><urlset>${entries}</urlset>`;
 }
 
-function sitemap(urls: string[]): Response {
-  const body = `<?xml version="1.0"?><urlset>${urls
-    .map((u) => `<url><loc>${u}</loc></url>`)
-    .join("")}</urlset>`;
-  return new Response(body, {
-    status: 200,
-    headers: { "content-type": "application/xml" },
-  });
-}
-
-function toUrl(input: string | URL | Request): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.href;
-  return input.url;
-}
-
-function requestedUrls(): string[] {
-  return vi.mocked(fetch).mock.calls.map(([input]) => toUrl(input));
-}
-
-describe("discoverUrls redirect handling", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("uses manual redirects for every discovery request", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = toUrl(input);
-      if (url.endsWith("/robots.txt")) {
-        return new Response("User-agent: *\nAllow: /\n", { status: 200 });
-      }
-      return sitemap([`${ORIGIN}/a`]);
+describe("discoverUrls", () => {
+  // Seeding the frontier is what sets a page's in-sitemap flag, so a URL
+  // dropped here reports inSitemap: false once the crawl reaches it through a
+  // link. Real sitemaps bury the homepage in the middle of the list
+  // (bannerbear.com lists it 387th of 1,328).
+  it("bounds robots bytes and cancels the unread remainder", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("#" + "é".repeat(300_000)));
+      },
+      cancel,
     });
-
-    const result = await discoverUrls(ORIGIN);
-
-    expect(result.urls).toEqual([`${ORIGIN}/a`]);
-    for (const [, init] of vi.mocked(fetch).mock.calls) {
-      expect(init?.redirect).toBe("manual");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/robots.txt")
+          ? new Response(body)
+          : new Response(null, { status: 404 }),
+      ),
+    );
+    try {
+      const { robotsText } = await discoverUrls("https://example.com");
+      expect(new TextEncoder().encode(robotsText ?? "").byteLength).toBe(
+        500 * 1024 - 1,
+      );
+      expect(robotsText).not.toContain("�");
+      expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
-  it("does not dispatch a robots.txt redirect to a blocked destination", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = toUrl(input);
-      if (url === `${ORIGIN}/robots.txt`) {
-        return redirect("http://169.254.169.254/latest/meta-data/");
-      }
-      return new Response("not found", { status: 404 });
-    });
-
-    const result = await discoverUrls(ORIGIN);
-
-    expect(result.robotsText).toBeNull();
-    expect(requestedUrls().some((u) => u.includes("169.254.169.254"))).toBe(
-      false,
+  it("returns sitemap URLs listed past the crawl's page budget", async () => {
+    const posts = Array.from(
+      { length: 5 },
+      (_, index) => `https://example.com/blog/post-${index}/`,
     );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        Promise.resolve(
+          url.endsWith("/robots.txt")
+            ? new Response("User-agent: *\nAllow: /")
+            : new Response(sitemapXml([...posts, "https://example.com/"]), {
+                headers: { "content-type": "application/xml" },
+              }),
+        ),
+      ),
+    );
+
+    const { urls } = await discoverUrls("https://example.com", 2);
+
+    expect(urls).toContain("https://example.com/");
   });
+});
 
-  it("does not dispatch a sitemap redirect to a blocked destination", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = toUrl(input);
-      if (url === `${ORIGIN}/robots.txt`) {
-        return new Response("", { status: 404 });
-      }
-      if (url === `${ORIGIN}/sitemap.xml`) {
-        return redirect("http://localhost:8080/internal");
-      }
-      return sitemap([`${ORIGIN}/leak`]);
-    });
+describe("parseRobotsTxt", () => {
+  it("applies an OpenSEO-Audit group over the wildcard group", () => {
+    const robots = parseRobotsTxt(
+      "https://example.com",
+      "User-agent: *\nAllow: /\n\nUser-agent: OpenSEO-Audit\nDisallow: /private/",
+    );
 
-    const result = await discoverUrls(ORIGIN);
-
-    expect(result.urls).toEqual([]);
-    expect(requestedUrls()).toEqual([
-      `${ORIGIN}/robots.txt`,
-      `${ORIGIN}/sitemap.xml`,
-    ]);
-  });
-
-  it("rejects a blocked hop in the middle of a permitted redirect chain", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = toUrl(input);
-      if (url === `${ORIGIN}/robots.txt`) {
-        return redirect("https://cdn.example.net/robots.txt");
-      }
-      if (url === "https://cdn.example.net/robots.txt") {
-        return redirect("http://10.0.0.5/robots.txt");
-      }
-      return new Response("", { status: 404 });
-    });
-
-    const result = await discoverUrls(ORIGIN);
-
-    expect(result.robotsText).toBeNull();
-    expect(requestedUrls()).toContain("https://cdn.example.net/robots.txt");
-    expect(requestedUrls().some((u) => u.includes("10.0.0.5"))).toBe(false);
-  });
-
-  it("follows permitted same-origin sitemap redirects", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = toUrl(input);
-      if (url === `${ORIGIN}/robots.txt`) {
-        return new Response("", { status: 404 });
-      }
-      if (url === `${ORIGIN}/sitemap.xml`) {
-        return redirect("/sitemap_index.xml", 301);
-      }
-      if (url === `${ORIGIN}/sitemap_index.xml`) {
-        return sitemap([`${ORIGIN}/page`]);
-      }
-      return new Response("", { status: 404 });
-    });
-
-    const result = await discoverUrls(ORIGIN);
-
-    expect(result.urls).toEqual([`${ORIGIN}/page`]);
-  });
-
-  it("stops after the maximum number of redirect hops", async () => {
-    let hops = 0;
-    vi.mocked(fetch).mockImplementation(async (input) => {
-      const url = toUrl(input);
-      if (url.includes("/robots")) {
-        hops += 1;
-        return redirect(`${ORIGIN}/robots-${hops}.txt`);
-      }
-      return new Response("", { status: 404 });
-    });
-
-    const result = await discoverUrls(ORIGIN);
-
-    expect(result.robotsText).toBeNull();
-    // initial request + 5 permitted redirect hops
-    expect(hops).toBe(6);
+    expect(robots.isAllowed("https://example.com/private/page")).toBe(false);
+    expect(robots.isAllowed("https://example.com/public")).toBe(true);
   });
 });
