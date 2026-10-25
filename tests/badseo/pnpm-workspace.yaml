@@ -3,6 +3,10 @@ allowBuilds:
   workerd: set this to true or false
 minimumReleaseAge: 11520
 minimumReleaseAgeExclude:
+  - "undici@7.30.1"
+  - "sharp@0.35.5"
+  - "zod@4.6.7"
+  - "source-map-js@1.2.2"
   - "@every-app/*"
   # TEMPORARY (remove after 2026-10-08): latest TanStack Start release
   # requested for the security refresh. Exempt only these matching versions.
@@ -29,6 +33,8 @@ overrides:
   js-yaml: "^4.3.2"
   "nanoid@3": "^3.3.18"
   postcss: "^8.5.23"
-  undici: "^7.29.1"
+  undici: "^7.30.1"
   # GHSA-rgj7-g3m4-5g8c — Miniflare 4 pins 0.34.5; 0.35.4 fixes bundled libheif.
-  "miniflare>sharp": "0.35.4"
+  "miniflare>sharp": "0.35.5"
+  zod: "^4.6.7"
+  source-map-js: "^1.2.2"
