@@ -6,6 +6,7 @@ import { XMLParser } from "fast-xml-parser";
 import { readBodyCapped } from "./html-response";
 import { isSameOrigin, normalizeUrl } from "./url-utils";
 import { isCrawlableUrl } from "./url-policy";
+import { publicFetch } from "@/server/lib/public-fetch";
 import { createRateLimitWait, type RateLimitWait } from "./crawl-throttle";
 import type { CrawlerAccess } from "@/shared/crawler-access";
 import {
@@ -84,7 +85,7 @@ async function fetchFollowingRedirects(
   let current = url;
   for (let hop = 0; hop <= MAX_DISCOVERY_REDIRECT_HOPS; hop++) {
     if (!isCrawlableUrl(current)) return null;
-    const response = await fetch(current, {
+    const response = await publicFetch(current, {
       headers: await auditRequestHeaders(current, access),
       redirect: "manual",
       signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
