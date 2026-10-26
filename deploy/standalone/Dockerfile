@@ -5,6 +5,7 @@ WORKDIR /build
 RUN corepack enable && corepack prepare pnpm@10.30.1 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
+COPY vendor ./vendor
 RUN pnpm install --frozen-lockfile
 COPY . .
 # The client bundle inlines AUTH_MODE at build time (vite envPrefix) only as a
