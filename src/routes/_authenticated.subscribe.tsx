@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 import { QueryError } from "@/client/components/QueryState";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import {
@@ -15,8 +16,12 @@ import {
 import { PlanPageAccountMenu } from "@/client/features/billing/PlanPageAccountMenu";
 import { PlanOfferCard } from "@/client/features/billing/PlanOfferCard";
 import {
+  AGENCY_PLAN_OFFER,
   BASE_PLAN_OFFER,
+  PRO_PLAN_OFFER,
+  getPlanName,
   monthlyCreditsFeature,
+  type PlanOffer,
 } from "@/client/features/billing/plan-offers";
 import { captureClientEvent } from "@/client/lib/posthog";
 import { useSession } from "@/lib/auth-client";
@@ -26,13 +31,43 @@ import { normalizeAuthRedirect } from "@/lib/auth-redirect";
 import { useCanManageBilling } from "@/client/features/team/organizationQueries";
 import { SUPPORT_EMAIL } from "@/client/lib/support";
 import { Button } from "@/client/components/ui/button";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/client/components/ui/toggle-group";
 
 const PLAN_FEATURES = [
   "Keyword research, backlinks, rank tracking, and site audits",
   "MCP server and agent skills for Claude, Cursor, and ChatGPT",
   "Google Search Console Integration",
-  monthlyCreditsFeature(BASE_PLAN_OFFER),
 ];
+
+// The tiers on openseo.so/pricing. Its "Get started" links preselect one with
+// ?plan=.
+const TIERS = {
+  base: { label: "Base", offer: BASE_PLAN_OFFER, perks: [] },
+  pro: {
+    label: "Pro",
+    offer: PRO_PLAN_OFFER,
+    perks: ["Priority email support"],
+  },
+  agency: {
+    label: "Agency",
+    offer: AGENCY_PLAN_OFFER,
+    perks: [
+      "Dedicated Slack Connect channel",
+      "AI enablement: hands-on help setting up agents and workflows for your team",
+    ],
+  },
+} satisfies Record<
+  string,
+  { label: string; offer: PlanOffer; perks: string[] }
+>;
+type Tier = keyof typeof TIERS;
+
+function isTier(value: unknown): value is Tier {
+  return typeof value === "string" && Object.hasOwn(TIERS, value);
+}
 
 // How long the post-checkout "finalizing" screen polls Autumn before giving
 // up and letting the user through anyway, and how often it polls.
@@ -45,7 +80,12 @@ export const Route = createFileRoute("/_authenticated/subscribe")({
   ssr: false,
   validateSearch: (
     search: Record<string, unknown>,
-  ): { upgrade?: true; redirect?: string; checkout?: "success" } => ({
+  ): {
+    upgrade?: true;
+    redirect?: string;
+    checkout?: "success";
+    plan?: Tier;
+  } => ({
     upgrade:
       search.upgrade === true || search.upgrade === "true" ? true : undefined,
     redirect:
@@ -53,15 +93,20 @@ export const Route = createFileRoute("/_authenticated/subscribe")({
         ? normalizeAuthRedirect(search.redirect)
         : undefined,
     checkout: search.checkout === "success" ? "success" : undefined,
+    plan: isTier(search.plan) ? search.plan : undefined,
   }),
-  loaderDeps: ({ search: { upgrade, checkout } }) => ({ upgrade, checkout }),
+  loaderDeps: ({ search: { upgrade, checkout, plan } }) => ({
+    upgrade,
+    checkout,
+    plan,
+  }),
   // Start the billing read alongside the session check, not after it. Upgrade
   // links outside Billing land here with ?upgrade=true, and hovering one
   // preloads this route, so the checkout link starts before the click.
   loader: ({ deps }) => {
     prefetchBillingAccount();
     if (deps.upgrade && deps.checkout !== "success") {
-      prefetchUpgradeCheckout();
+      prefetchUpgradeCheckout(TIERS[deps.plan ?? "base"].offer.planId);
     }
   },
   component: SubscribePage,
@@ -69,7 +114,14 @@ export const Route = createFileRoute("/_authenticated/subscribe")({
 
 function SubscribePage() {
   const navigate = useNavigate();
-  const { upgrade: isUpgradeFlow, redirect, checkout } = Route.useSearch();
+  const {
+    upgrade: isUpgradeFlow,
+    redirect,
+    checkout,
+    plan: requestedPlan,
+  } = Route.useSearch();
+  const plan = requestedPlan ?? "base";
+  const { offer, perks } = TIERS[plan];
   const { data: session } = useSession();
   const [isAttaching, setIsAttaching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +141,7 @@ function SubscribePage() {
         : false,
   });
   const account = accountQuery.data;
+  const paidPlanId = account?.paidPlanId ?? null;
 
   // Checkout is owner-only; other members hitting the paywall are pointed at
   // their organization owner instead of a Subscribe button that would 403.
@@ -121,10 +174,35 @@ function SubscribePage() {
     if (subscribeRouteState === "redirectToApp") {
       if (checkoutCompleted) {
         captureClientEvent("billing:checkout_success");
+      } else if (requestedPlan && paidPlanId) {
+        // A paying customer followed a pricing-page plan link. Switching
+        // plans goes through support for now; say so instead of a silent
+        // redirect.
+        const wanted = TIERS[requestedPlan].offer;
+        toast.info(
+          paidPlanId === wanted.planId
+            ? `You're already on the ${wanted.name}`
+            : `You're on the ${getPlanName(paidPlanId)}`,
+          {
+            id: "subscribe-plan-switch",
+            description:
+              paidPlanId === wanted.planId
+                ? undefined
+                : `To switch to the ${wanted.name}, email ${SUPPORT_EMAIL}.`,
+            duration: 10_000,
+          },
+        );
       }
       void navigate({ href: redirect ?? "/", replace: true });
     }
-  }, [checkoutCompleted, navigate, redirect, subscribeRouteState]);
+  }, [
+    checkoutCompleted,
+    navigate,
+    paidPlanId,
+    redirect,
+    requestedPlan,
+    subscribeRouteState,
+  ]);
 
   useEffect(() => {
     if (subscribeRouteState === "showPaywall" && !isUpgradeFlow) {
@@ -181,7 +259,7 @@ function SubscribePage() {
     setIsAttaching(true);
 
     try {
-      await openUpgradeCheckout();
+      await openUpgradeCheckout(offer.planId);
     } catch (err) {
       setError(
         getStandardErrorMessage(
@@ -217,9 +295,42 @@ function SubscribePage() {
         </p>
       </div>
 
+      <ToggleGroup
+        variant="outline"
+        spacing={0}
+        value={[plan]}
+        // The checkout being opened is for the plan picked when Subscribe was
+        // clicked; switching now would show one plan and charge another.
+        disabled={isAttaching}
+        onValueChange={(next) => {
+          // A press on the active item empties the group. Keep one item on.
+          const picked = next[0];
+          if (isTier(picked)) {
+            setError(null);
+            void navigate({
+              to: ".",
+              search: (prev) => ({ ...prev, plan: picked }),
+              replace: true,
+            });
+          }
+        }}
+        className="w-full"
+        aria-label="Plan"
+      >
+        {Object.entries(TIERS).map(([tier, { label }]) => (
+          <ToggleGroupItem
+            key={tier}
+            value={tier}
+            className="flex-1 aria-pressed:bg-primary/15 aria-pressed:text-primary"
+          >
+            {label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+
       <PlanOfferCard
-        offer={BASE_PLAN_OFFER}
-        features={PLAN_FEATURES}
+        offer={offer}
+        features={[...PLAN_FEATURES, ...perks, monthlyCreditsFeature(offer)]}
         afterFeatures={
           /* Sub-bullet of the Usage Credits line above. */
           <li className="-mt-1 pl-6 text-xs">

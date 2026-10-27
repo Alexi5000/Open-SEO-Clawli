@@ -1,5 +1,7 @@
 import {
+  AUTUMN_AGENCY_PLAN_ID,
   AUTUMN_PAID_PLAN_ID,
+  AUTUMN_PRO_PLAN_ID,
   AUTUMN_YC_PLAN_ID,
   type CheckoutPlanId,
 } from "@/shared/billing";
@@ -29,12 +31,34 @@ export const YC_PLAN_OFFER: PlanOffer = {
   monthlyCreditsUsd: 50,
 };
 
+export const PRO_PLAN_OFFER: PlanOffer = {
+  planId: AUTUMN_PRO_PLAN_ID,
+  name: "Pro Plan",
+  priceUsd: 30,
+  monthlyCreditsUsd: 36,
+};
+
+export const AGENCY_PLAN_OFFER: PlanOffer = {
+  planId: AUTUMN_AGENCY_PLAN_ID,
+  name: "Agency Plan",
+  priceUsd: 200,
+  monthlyCreditsUsd: 240,
+};
+
+/** The tiers /subscribe offers, cheapest first. */
+export const TIER_PLAN_OFFERS = [
+  BASE_PLAN_OFFER,
+  PRO_PLAN_OFFER,
+  AGENCY_PLAN_OFFER,
+] as const;
+
 /** A plan's display name. Plans without an offer here (friends and family)
  *  show their ID, which is also their name in Autumn. */
 export function getPlanName(planId: string) {
   return (
-    [BASE_PLAN_OFFER, YC_PLAN_OFFER].find((offer) => offer.planId === planId)
-      ?.name ?? planId
+    [...TIER_PLAN_OFFERS, YC_PLAN_OFFER].find(
+      (offer) => offer.planId === planId,
+    )?.name ?? planId
   );
 }
 

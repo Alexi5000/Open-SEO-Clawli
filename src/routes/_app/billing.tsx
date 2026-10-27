@@ -1,4 +1,9 @@
-import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
+import {
+  Link,
+  createFileRoute,
+  notFound,
+  useNavigate,
+} from "@tanstack/react-router";
 import { z } from "zod";
 import { useState } from "react";
 import { ErrorState } from "@/client/components/ErrorState";
@@ -18,10 +23,6 @@ import { isHostedClientAuthMode } from "@/lib/auth-mode";
 import { useCanManageBilling } from "@/client/features/team/organizationQueries";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
 import { prefetchBillingAccount } from "@/client/features/billing/billingAccountQuery";
-import {
-  openUpgradeCheckout,
-  prefetchUpgradeCheckout,
-} from "@/client/features/billing/checkout";
 import { AutoReloadSettings } from "@/client/features/billing/AutoReloadSettings";
 import { BillingRow } from "@/client/features/billing/BillingRow";
 import { BillingTabs } from "@/client/features/billing/BillingTabs";
@@ -39,6 +40,7 @@ import {
 import {
   BILLING_ROUTE,
   BILLING_TABS,
+  SUBSCRIBE_ROUTE,
   TOP_UP_MAX_USD,
   TOP_UP_MIN_USD,
 } from "@/shared/billing";
@@ -58,12 +60,11 @@ export const Route = createFileRoute("/_app/billing")({
       throw notFound();
     }
   },
-  // Start both reads, and a free plan's checkout link, on link intent and on
-  // a full load alongside the session check, without holding up navigation.
+  // Start both reads on link intent and on a full load alongside the session
+  // check, without holding up navigation.
   loader: () => {
     prefetchBillingAccount();
     void queryClient.prefetchQuery(billingUsageQueryOptions());
-    prefetchUpgradeCheckout();
   },
   component: BillingPage,
 });
@@ -225,41 +226,41 @@ function BillingPage() {
                     {canManageBilling ? (
                       <>
                         {" "}
-                        &middot; Upgrade to {BASE_PLAN_OFFER.name} ($
-                        {BASE_PLAN_OFFER.priceUsd}/month) for every feature and
-                        ${BASE_PLAN_OFFER.monthlyCreditsUsd} of credits each
-                        month
+                        &middot; Upgrade to access every feature and more
+                        credits each month
                       </>
                     ) : null}
                   </>
                 )
               }
               action={
-                !canManageBilling ? null : (
+                !canManageBilling ? null : isFreePlan ? (
                   <Button
-                    variant={isFreePlan ? "default" : "outline"}
+                    size="sm"
+                    nativeButton={false}
+                    render={
+                      <Link to={SUBSCRIBE_ROUTE} search={{ upgrade: true }} />
+                    }
+                  >
+                    Upgrade Plan
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
                     size="sm"
                     pending={pendingAction === "plan"}
                     disabled={pendingAction !== null}
                     onClick={() =>
-                      isFreePlan
-                        ? void runAction(
-                            "plan",
-                            openUpgradeCheckout,
-                            "We couldn't start the checkout. Please try again.",
-                          )
-                        : void runAction(
-                            "plan",
-                            openPortal,
-                            "We couldn't open the billing portal. Please try again.",
-                          )
+                      void runAction(
+                        "plan",
+                        openPortal,
+                        "We couldn't open the billing portal. Please try again.",
+                      )
                     }
                   >
                     {pendingAction === "plan"
                       ? "Redirecting to Stripe..."
-                      : isFreePlan
-                        ? "Upgrade Plan"
-                        : "Manage subscription"}
+                      : "Manage subscription"}
                   </Button>
                 )
               }
