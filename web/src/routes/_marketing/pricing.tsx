@@ -5,9 +5,9 @@ import { buildPageSeo } from "@/lib/seo";
 export const Route = createFileRoute("/_marketing/pricing")({
   head: () =>
     buildPageSeo({
-      title: "Pricing estimator",
+      title: "Pricing",
       description:
-        "Start at $10/mo. The $10 includes $10 of usage, enough for most people. Move the sliders to estimate what your month would cost.",
+        "Plans from $10/mo, each with usage included every month. Pro and Agency include 20% more usage than you pay for. Estimate what your month would cost.",
       path: "/pricing",
       titleSuffix: "OpenSEO",
     }),
@@ -77,6 +77,81 @@ const CREDITS_PER_UNIT = {
   backlinkProfile: creditsForRaw(RAW_COST_USD.backlinkProfile), // 79
   aiPromptCheck: creditsForRaw(RAW_COST_USD.aiPromptCheck), // 2
 } as const;
+
+/* ------------------------------------------------------------------ *
+ * Plans — the cards at the top of the page. Pro and Agency include 20%
+ * more usage than their price.
+ * ------------------------------------------------------------------ */
+type Plan = {
+  name: string;
+  priceUsd: number;
+  includedUsageUsd: number;
+  audience: string;
+  features: string[];
+  signUpHref: string;
+  /** Small print under the button. Every card keeps the line so they align. */
+  signUpNote?: string;
+  contactHref?: string;
+  featured?: boolean;
+};
+
+const SIGN_UP_URL = "https://app.openseo.so/sign-up";
+
+/** Sign-up that goes straight to this plan's checkout in the app. */
+function checkoutSignUpUrl(plan: "pro" | "agency") {
+  const url = new URL(SIGN_UP_URL);
+  url.searchParams.set("redirect", `/subscribe?upgrade=true&plan=${plan}`);
+  return url.href;
+}
+
+const PAY_AS_YOU_GO = "Pay as you go for extra usage";
+
+const PLANS: Plan[] = [
+  {
+    name: "Base",
+    signUpHref: SIGN_UP_URL,
+    signUpNote: "Try for free",
+    priceUsd: BASE_PRICE_USD,
+    includedUsageUsd: BASE_INCLUDED_CREDIT_USD,
+    audience: "For your own website.",
+    features: [
+      "Keyword research, backlinks, rank tracking, and site audits",
+      "AI visibility, prompt research, and tracking",
+      "Works inside Claude, Cursor, and ChatGPT",
+      "Free Google Search Console data",
+      PAY_AS_YOU_GO,
+    ],
+    featured: true,
+  },
+  {
+    name: "Pro",
+    signUpHref: checkoutSignUpUrl("pro"),
+    priceUsd: 30,
+    includedUsageUsd: 36,
+    audience: "For freelancers and growing teams.",
+    features: [
+      "Everything in Base",
+      "20% more usage than you pay for",
+      "Priority email support",
+      PAY_AS_YOU_GO,
+    ],
+  },
+  {
+    name: "Agency",
+    signUpHref: checkoutSignUpUrl("agency"),
+    priceUsd: 200,
+    includedUsageUsd: 240,
+    audience: "For agencies with many clients.",
+    features: [
+      "Everything in Pro",
+      "20% more usage than you pay for",
+      "Dedicated Slack Connect channel",
+      "AI enablement: hands-on help setting up agents and workflows for your team",
+      PAY_AS_YOU_GO,
+    ],
+    contactHref: "https://calendar.app.google/F2ZQ9Rs3Jr4rfnpFA",
+  },
+];
 
 /* ------------------------------------------------------------------ *
  * Personas — preset the estimator to the two modeled customers.
@@ -188,72 +263,60 @@ function Pricing() {
   }, [inputs, persona]);
 
   return (
-    <article className="mx-auto max-w-4xl">
+    <article>
       {/* 1. Hero */}
-      <p className="text-sm font-medium text-[var(--color-brand-accent)]">
-        Pricing
-      </p>
-      <h1 className="mt-3 max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-neutral-950 md:text-5xl">
-        Starts at $10/month
-      </h1>
-      <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--color-brand-muted)]">
-        Other SEO tools are too expensive. OpenSEO grows with you.
-      </p>
+      <div className="text-center">
+        <p className="text-sm font-medium text-[var(--color-brand-accent)]">
+          Pricing
+        </p>
+        <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight text-neutral-950 md:text-5xl">
+          Starts at $10/month
+        </h1>
+        <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-[var(--color-brand-muted)]">
+          Other SEO tools are too expensive. OpenSEO grows with you.
+        </p>
+      </div>
 
-      {/* 2. Base Plan */}
-      <section className="mt-10 border-y border-[var(--color-border-subtle)] py-8">
-        <div className="flex items-baseline justify-between gap-4">
-          <div>
-            <p className="font-semibold text-neutral-950">Base Plan</p>
-            <p className="mt-1 text-sm text-[var(--color-brand-muted)]">
-              One plan. Everything included.
-            </p>
-          </div>
-          <p className="text-2xl font-semibold tabular-nums text-neutral-950">
-            $10
-            <span className="text-base font-normal text-[var(--color-brand-muted)]">
-              /mo
-            </span>
+      {/* 2. Plans */}
+      <section
+        aria-label="Plans"
+        className="mt-10 grid gap-5 md:grid-cols-3 md:items-stretch"
+      >
+        {PLANS.map((plan) => (
+          <PlanCard key={plan.name} plan={plan} />
+        ))}
+      </section>
+
+      {/* 3. How usage works */}
+      <section className="mx-auto mt-16 max-w-4xl">
+        <h2 className="text-xl font-semibold tracking-tight text-neutral-950">
+          How usage-based pricing works
+        </h2>
+        <div className="mt-4 space-y-3 text-sm leading-6 text-[var(--color-brand-muted)]">
+          <p>
+            Every plan includes a monthly amount of usage. Usage pays for new
+            SEO data you look up: keyword research, backlinks, rank checks, site
+            audits, and AI visibility checks. Each action costs what the data
+            costs us plus a flat {Math.round((MARKUP - 1) * 100)}%, rounded up
+            to the nearest tenth of a cent, so a keyword search is about $0.05
+            and a rank check is a fraction of a cent.
           </p>
-        </div>
-        <ul className="mt-4 space-y-2">
-          {[
-            "Keyword research, backlinks, rank tracking, and site audits",
-            "AI visibility, prompt research, and tracking",
-            "Works inside Claude, Cursor, and ChatGPT",
-            "Google Search Console data is free and doesn't touch your $10",
-            "Includes $10 of usage every month",
-            "Buy extra usage anytime, or reload it automatically; it never expires",
-          ].map((item) => (
-            <li key={item} className="flex gap-2.5 text-sm text-neutral-700">
-              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-brand-accent)]">
-                <span className="sr-only">Included:</span>
-              </span>
-              {item}
-            </li>
-          ))}
-        </ul>
-        <div className="mt-6 flex items-center gap-4">
-          <a
-            href="https://app.openseo.so/sign-up"
-            className="inline-flex items-center justify-center rounded-lg bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
-          >
-            Get Started
-            <span aria-hidden="true" className="ml-1.5">
-              &rarr;
-            </span>
-          </a>
-          <p className="text-xs text-neutral-500">Try for free</p>
+          <p>
+            Your projects, saved results, exports, and Google Search Console
+            data never use any. When you need more than your plan includes, buy
+            extra usage or turn on auto-reload up to a monthly limit you set.
+            Extra usage never expires.
+          </p>
         </div>
       </section>
 
-      {/* 3. The estimator */}
-      <section className="mt-10">
+      {/* 4. The estimator */}
+      <section className="mx-auto mt-10 max-w-4xl">
         <div className="grid divide-y divide-[var(--color-border-subtle)] rounded-xl border border-[var(--color-border-subtle)] bg-white lg:grid-cols-[1.1fr_1fr] lg:divide-x lg:divide-y-0">
           {/* Inputs */}
           <div className="p-5 sm:p-6">
             <h2 className="text-lg font-semibold tracking-tight text-neutral-950">
-              Estimate your month
+              Estimate your monthly usage
             </h2>
 
             {/* Persona toggle */}
@@ -421,8 +484,8 @@ function Pricing() {
         </div>
       </section>
 
-      {/* 4. FAQ */}
-      <section className="mt-14">
+      {/* 5. FAQ */}
+      <section className="mx-auto mt-14 max-w-4xl">
         <h2 className="text-xl font-semibold tracking-tight text-neutral-950">
           FAQ
         </h2>
@@ -441,9 +504,8 @@ function Pricing() {
               What if I use all my credits for the month?
             </dt>
             <dd className="mt-1.5 text-sm leading-6 text-[var(--color-brand-muted)]">
-              Buy top-up credits at any time, or turn on auto-reload so
-              OpenSEO buys them for you when you run low, up to a monthly
-              limit you set.
+              Buy top-up credits at any time, or turn on auto-reload so OpenSEO
+              buys them for you when you run low, up to a monthly limit you set.
             </dd>
           </div>
           <div className="py-4 first:pt-0 last:pb-0">
@@ -463,7 +525,7 @@ function Pricing() {
             </dt>
             <dd className="mt-1.5 text-sm leading-6 text-[var(--color-brand-muted)]">
               Top-up credits roll over indefinitely. The Usage Credits included
-              with your Base Plan reset each billing cycle.
+              with your plan reset each billing cycle.
             </dd>
           </div>
           <div className="py-4 first:pt-0 last:pb-0">
@@ -487,6 +549,71 @@ function Pricing() {
         </dl>
       </section>
     </article>
+  );
+}
+
+function PlanCard({ plan }: { plan: Plan }) {
+  return (
+    <div
+      className={`flex flex-col rounded-xl border bg-white p-6 ${
+        plan.featured
+          ? "border-neutral-950 shadow-md"
+          : "border-[var(--color-border-subtle)]"
+      }`}
+    >
+      <h2 className="font-semibold text-neutral-950">{plan.name}</h2>
+      <p className="mt-1 text-sm text-[var(--color-brand-muted)]">
+        {plan.audience}
+      </p>
+      <p className="mt-5 text-4xl font-semibold tabular-nums tracking-tight text-neutral-950">
+        ${plan.priceUsd}
+        <span className="text-base font-normal text-[var(--color-brand-muted)]">
+          /mo
+        </span>
+      </p>
+      <p className="mt-1 text-sm font-medium text-neutral-800">
+        Includes ${plan.includedUsageUsd} of usage every month
+      </p>
+      <a
+        href={plan.signUpHref}
+        className={`mt-6 inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-medium transition-colors ${
+          plan.featured
+            ? "bg-neutral-950 text-white hover:bg-neutral-800"
+            : "border border-[var(--color-border-subtle)] text-neutral-950 hover:border-neutral-950"
+        }`}
+      >
+        Get started
+        <span aria-hidden="true" className="ml-1.5">
+          &rarr;
+        </span>
+      </a>
+      <p className="mt-2 h-4 text-center text-xs text-neutral-500">
+        {plan.signUpNote}
+      </p>
+      <ul className="mt-4 space-y-2.5 border-t border-[var(--color-border-subtle)] pt-6">
+        {plan.features.map((item) => (
+          <li key={item} className="flex gap-2.5 text-sm text-neutral-700">
+            <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-brand-accent)]">
+              <span className="sr-only">Included:</span>
+            </span>
+            {item}
+          </li>
+        ))}
+      </ul>
+      {plan.contactHref ? (
+        <p className="mt-auto pt-6 text-sm text-[var(--color-brand-muted)]">
+          Questions first?{" "}
+          <a
+            href={plan.contactHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-neutral-950 underline decoration-[var(--color-brand-accent)] underline-offset-4"
+          >
+            Book a call
+          </a>
+        </p>
+      ) : null}
+    </div>
   );
 }
 
