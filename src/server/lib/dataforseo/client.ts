@@ -59,10 +59,12 @@ import {
   fetchLlmResponse,
   fetchLlmTopPages,
 } from "@/server/lib/dataforseo/ai";
+import { fetchAiTrackingLiveAnswer } from "@/server/lib/dataforseo/ai-tracking";
 import {
-  fetchAiTrackingLiveAnswer,
-  postAiTrackingTasks,
-} from "@/server/lib/dataforseo/ai-tracking";
+  postAiTrackingTasksOnHold,
+  settleAiTrackingHold,
+  type AiTrackingHold,
+} from "@/server/lib/dataforseo/ai-tracking-billing";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 import { AppError } from "@/server/lib/errors";
 
@@ -302,14 +304,18 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
         fetchLlmResponse,
         dataforseoPricing.aiSearch.llmResponse,
       ),
-      // Posts up to 100 tracked prompts for one engine; one metered charge
-      // covers the batch (DataForSEO bills task_post, collection is free).
-      trackingTaskPost: meter(
-        customer,
-        postAiTrackingTasks,
-        dataforseoPricing.aiSearch.trackingTaskPost,
-        "ai_prompt_responses",
-      ),
+      // Posts up to 100 tracked prompts for one engine on an open credit
+      // hold. DataForSEO bills task_post, but the customer pays only for the
+      // answers that arrive: the caller settles the hold with
+      // settleTrackingHold once collection ends.
+      trackingTaskPost: (
+        input: Parameters<typeof postAiTrackingTasksOnHold>[1],
+      ) => postAiTrackingTasksOnHold(customer, input),
+      settleTrackingHold: (input: {
+        hold: AiTrackingHold;
+        /** One per task whose answer arrived. */
+        costs: number[];
+      }) => settleAiTrackingHold(customer, input),
       // A manual run's live answers share one credit hold and one settle (see
       // meterDataforseoCalls). Resolves per call, in order.
       trackingLiveBatch: (

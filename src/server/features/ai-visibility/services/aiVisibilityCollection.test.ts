@@ -11,6 +11,7 @@ import {
   postAiBatch,
   prepareAiRun,
 } from "./aiVisibilityCollection";
+import { AI_ANSWER_FAILURES } from "./aiVisibilityErrors";
 import { configuration, customer } from "./aiVisibilityTestFixtures";
 
 const { testDb, dataforseo } = await vi.hoisted(async () => {
@@ -54,6 +55,7 @@ const market = { locationCode: 2840, languageCode: "en" };
 const pendingTask = {
   tag: "answer-0",
   taskId: "task",
+  costUsd: 0.002,
   engine: "chatgpt",
   prompt: "Which SEO tools?",
   attempts: 1,
@@ -157,11 +159,12 @@ describe("AI answer collection", () => {
   });
 
   it("fails the answers DataForSEO did not accept and collects the rest", async () => {
-    dataforseo.trackingTaskPost.mockResolvedValue([
-      { tag: "answer-0", taskId: "task" },
-    ]);
+    dataforseo.trackingTaskPost.mockResolvedValue({
+      tasks: [{ tag: "answer-0", taskId: "task", costUsd: 0.002 }],
+      hold: null,
+    });
 
-    const pending = await postAiBatch(runId, customer, market, {
+    const { pending } = await postAiBatch(runId, customer, market, {
       engine: "chatgpt",
       tasks: [
         { tag: "answer-0", prompt: "Which SEO tools?" },
@@ -176,11 +179,12 @@ describe("AI answer collection", () => {
   });
 
   it("counts the attempt of an answer posted again, so its retries stop at 3", async () => {
-    dataforseo.trackingTaskPost.mockResolvedValue([
-      { tag: "answer-0", taskId: "task" },
-    ]);
+    dataforseo.trackingTaskPost.mockResolvedValue({
+      tasks: [{ tag: "answer-0", taskId: "task", costUsd: 0.002 }],
+      hold: null,
+    });
 
-    const pending = await postAiBatch(runId, customer, market, {
+    const { pending } = await postAiBatch(runId, customer, market, {
       engine: "chatgpt",
       tasks: [{ tag: "answer-0", prompt: "Which SEO tools?", attempts: 2 }],
     });
@@ -425,18 +429,10 @@ describe("AI answer collection", () => {
     });
     expect(await repo.getObservation("answer-1")).toMatchObject({
       status: "failed",
-      error: "No answer arrived within the collection window.",
-    });
-  });
-
-  it("tells the tracker the check could not collect answers when none arrived", async () => {
-    await finalizeAiRun(runId);
-
-    expect(await repo.getRunInternal(runId)).toMatchObject({
-      status: "failed",
+      error: AI_ANSWER_FAILURES.notArrived,
     });
     expect((await repo.getTracker("project"))?.lastSkipReason).toBe(
-      "The last check could not collect answers.",
+      AI_ANSWER_FAILURES.notCollected,
     );
   });
 });

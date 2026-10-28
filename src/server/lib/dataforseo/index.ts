@@ -4,6 +4,7 @@
 // client.ts.
 
 export { createDataforseoClient } from "@/server/lib/dataforseo/client";
+export type { AiTrackingHold } from "@/server/lib/dataforseo/ai-tracking-billing";
 
 export {
   fetchKeywordMetricsForList,

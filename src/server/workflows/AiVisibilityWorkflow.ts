@@ -14,6 +14,10 @@ import {
   prepareAiRun,
   type AiPendingTask,
 } from "@/server/features/ai-visibility/services/aiVisibilityCollection";
+import {
+  settleAiRun,
+  type AiPostedHold,
+} from "@/server/features/ai-visibility/services/aiVisibilityBilling";
 import { runAiResearchSetup } from "@/server/features/ai-visibility/services/aiResearchKeywords";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import { describeError } from "@/server/lib/errors";
@@ -84,7 +88,35 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
           ),
       );
     const { runId, customer } = payload;
+    let pending: AiPendingTask[] = [];
+    // Each posted batch holds credits until settle charges the answers that
+    // arrived, once collection ends or the run fails.
+    const holds: AiPostedHold[] = [];
+    // A run in flight across the deploy that added holds replays an older
+    // post output, the bare task list, which was charged when posted.
+    const queue = (posted: Awaited<ReturnType<typeof postAiBatch>>) => {
+      if (Array.isArray(posted)) return pending.push(...posted);
+      if (posted.hold) holds.push(posted.hold);
+      pending.push(...posted.pending);
+    };
+    const settle = async () => {
+      if (holds.length === 0) return;
+      const posted = holds.splice(0);
+      try {
+        // Safe to retry: Autumn settles a hold once, then forgets its lock.
+        await pgStep(step, "settle", FREE_STEP, () =>
+          settleAiRun(runId, customer, posted),
+        );
+      } catch (error) {
+        // A hold left open expires at its TTL without charging.
+        console.error(
+          `[ai-visibility] ${runId} settle failed: ${describeError(error)}`,
+          error,
+        );
+      }
+    };
     const markFailed = async (error: unknown) => {
+      await settle();
       await pgStep(step, "mark-failed", FREE_STEP, () =>
         markAiRunFailed(runId),
       );
@@ -97,7 +129,6 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
       );
       return markFailed(error);
     };
-    let pending: AiPendingTask[] = [];
     let plan: Awaited<ReturnType<typeof prepareAiRun>>;
     // Reads the pending answers once, then posts each answer that DataForSEO's
     // backend failed again in its own step, since a post is billed. The read
@@ -111,7 +142,7 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
           collectAiRound(runId, remaining, canRetry),
         );
       } catch (error) {
-        // Posted tasks are already paid for; keep polling them next round.
+        // Posted tasks keep their credit hold; poll them again next round.
         console.warn(
           `[ai-visibility] ${runId} read-${name}: ${describeError(error)}`,
         );
@@ -120,13 +151,10 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
       pending = round.pending;
       for (const [index, batch] of round.retry.entries()) {
         try {
-          pending.push(
-            ...(await pgStep(
-              step,
-              `repost-${name}-${index}`,
-              SINGLE_ATTEMPT,
-              () => postAiBatch(runId, customer, plan.market, batch),
-            )),
+          queue(
+            await pgStep(step, `repost-${name}-${index}`, SINGLE_ATTEMPT, () =>
+              postAiBatch(runId, customer, plan.market, batch),
+            ),
           );
         } catch (error) {
           // Its answers fail at finalize.
@@ -162,10 +190,10 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
     else
       for (const [index, batch] of plan.batches.entries())
         try {
-          pending.push(
-            ...(await pgStep(step, `post-${index}`, SINGLE_ATTEMPT, () =>
+          queue(
+            await pgStep(step, `post-${index}`, SINGLE_ATTEMPT, () =>
               postAiBatch(runId, customer, plan.market, batch),
-            )),
+            ),
           );
         } catch (error) {
           console.warn(
@@ -205,6 +233,7 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
       // A task posted after the last round would never be read.
       await collect(`${round}`, round < POLL_INTERVALS.length - 1);
     }
+    await settle();
     try {
       await pgStep(step, "finalize", FREE_STEP, () => finalizeAiRun(runId));
     } catch (error) {

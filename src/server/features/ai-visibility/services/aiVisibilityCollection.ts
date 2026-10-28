@@ -23,6 +23,7 @@ import {
   parseLlmResponseAnswer,
   type ParsedAiAnswer,
 } from "../providers/dataforseoEvidence";
+import type { AiPostedHold } from "./aiVisibilityBilling";
 import { aiBrands } from "./aiVisibilityConfiguration";
 import { AI_ANSWER_FAILURES } from "./aiVisibilityErrors";
 import { matchAiBrand } from "./aiVisibilityMatching";
@@ -140,40 +141,47 @@ function engineBatches(answers: AiLiveTask[], size: number): AiTaskBatch[] {
 }
 
 /**
- * Posts one batch through the metered client, which bills it. Answers the
- * provider did not accept fail now; the rest are collected later.
+ * Posts one batch through the metered client, which holds credits for it
+ * until settleAiRun charges the answers that arrived. Answers the provider
+ * did not accept fail now; the rest are collected later.
  */
 export async function postAiBatch(
   runId: string,
   customer: BillingCustomerContext,
   market: AiRunMarket,
   batch: AiTaskBatch,
-): Promise<AiPendingTask[]> {
+): Promise<{ pending: AiPendingTask[]; hold: AiPostedHold | null }> {
   let posted: PostedAiTrackingTask[] = [];
+  let hold: AiPostedHold | null = null;
   // A rejected entry is logged where it is parsed.
   let error: ErrorCode = "INTERNAL_ERROR";
   try {
-    posted = await createDataforseoClient(customer).aiSearch.trackingTaskPost({
+    const result = await createDataforseoClient(
+      customer,
+    ).aiSearch.trackingTaskPost({
       engine: batch.engine,
       tasks: batch.tasks,
       ...market,
     });
+    posted = result.tasks;
+    if (result.hold) hold = { ...result.hold, tasks: posted };
   } catch (cause) {
     error = asAppError(cause)?.code ?? "INTERNAL_ERROR";
     console.warn(`[ai-visibility] ${runId} task_post failed:`, cause);
   }
-  const taskIds = new Map(posted.map((task) => [task.tag, task.taskId]));
+  const postedByTag = new Map(posted.map((task) => [task.tag, task]));
   const rejected = batch.tasks
     .map((task) => task.tag)
-    .filter((tag) => !taskIds.has(tag));
+    .filter((tag) => !postedByTag.has(tag));
   if (rejected.length)
     await repo.failPendingObservations(runId, error, rejected);
-  return batch.tasks.flatMap((task) => {
-    const taskId = taskIds.get(task.tag);
-    if (!taskId) return [];
+  const pending = batch.tasks.flatMap((task) => {
+    const postedTask = postedByTag.get(task.tag);
+    if (!postedTask) return [];
     const attempts = (task.attempts ?? 0) + 1;
-    return [{ ...task, taskId, engine: batch.engine, attempts }];
+    return [{ ...task, ...postedTask, engine: batch.engine, attempts }];
   });
+  return { pending, hold };
 }
 
 /**
@@ -424,10 +432,14 @@ async function saveAiAnswer(
   });
 }
 
-/** Fails answers that never arrived and records how the run finished. */
+/**
+ * Fails answers that never arrived, records how the run finished, and tells
+ * the tracker when answers went missing (settleAiRun charged none of them).
+ */
 export async function finalizeAiRun(runId: string) {
   const run = await repo.getRunInternal(runId);
   if (!run || run.status !== "running") return;
+  const missing = await repo.listPendingObservationIds(runId);
   await repo.failPendingObservations(runId, AI_ANSWER_FAILURES.notArrived);
   const statuses = await repo.getObservationStatuses([runId]);
   const completed = statuses.filter((row) => row.status === "completed").length;
@@ -442,7 +454,11 @@ export async function finalizeAiRun(runId: string) {
     completedAt: new Date().toISOString(),
   });
   await repo.updateTracker(run.trackerId, {
-    lastSkipReason: status === "failed" ? AI_ANSWER_FAILURES.runFailed : null,
+    lastSkipReason: missing.length
+      ? AI_ANSWER_FAILURES.notCollected
+      : status === "failed"
+        ? AI_ANSWER_FAILURES.runFailed
+        : null,
   });
 }
 

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   live: vi.fn(),
   model: vi.fn(),
   collect: vi.fn(),
+  settle: vi.fn(),
   finalize: vi.fn(),
   markFailed: vi.fn(),
   sleep: vi.fn(),
@@ -29,6 +30,9 @@ vi.mock(
     markAiRunFailed: mocks.markFailed,
   }),
 );
+vi.mock("@/server/features/ai-visibility/services/aiVisibilityBilling", () => ({
+  settleAiRun: mocks.settle,
+}));
 vi.mock("./pgStep", () => ({
   pgStep: (
     _step: unknown,
@@ -47,6 +51,7 @@ const customer = {
   userEmail: "user@example.com",
 };
 const task = { tag: "answer", taskId: "task", engine: "chatgpt" };
+const hold = { hold: { lockId: "lock" }, path: [], tasks: [task] };
 function execute() {
   // The mocked base and pgStep use no execution context, bindings, or step methods besides sleep.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal test runtime boundary
@@ -72,7 +77,7 @@ beforeEach(() => {
       { engine: "gemini", tasks: [] },
     ],
   });
-  mocks.post.mockResolvedValue([task]);
+  mocks.post.mockResolvedValue({ pending: [task], hold });
   mocks.collect.mockResolvedValue({ pending: [], retry: [] });
 });
 
@@ -90,7 +95,18 @@ describe("AI visibility workflow", () => {
       true,
     );
     expect(mocks.sleep).toHaveBeenCalledOnce();
+    expect(mocks.settle).toHaveBeenCalledExactlyOnceWith("run", customer, [
+      hold,
+      hold,
+    ]);
     expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith("run");
+  });
+
+  it("polls the bare task list an older deploy's post step saved, with no hold to settle", async () => {
+    mocks.post.mockResolvedValue([task]);
+    await execute();
+    expect(mocks.collect).toHaveBeenCalledWith("run", [task, task], true);
+    expect(mocks.settle).not.toHaveBeenCalled();
   });
 
   it("asks the model API for Claude and Perplexity, then reads queued answers before sleeping", async () => {
@@ -193,6 +209,11 @@ describe("AI visibility workflow", () => {
     const consoleError = vi.spyOn(console, "error");
     await expect(execute()).rejects.toThrow(error);
     expect(consoleError).not.toHaveBeenCalled();
+    // The answers that arrived before the failure are still charged.
+    expect(mocks.settle).toHaveBeenCalledExactlyOnceWith("run", customer, [
+      hold,
+      hold,
+    ]);
     expect(mocks.markFailed).toHaveBeenCalledExactlyOnceWith("run");
   });
 });
