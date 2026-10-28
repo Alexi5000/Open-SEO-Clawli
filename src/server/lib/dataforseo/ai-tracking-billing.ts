@@ -25,10 +25,11 @@ export interface AiTrackingHold {
 }
 
 /**
- * Outlasts a scheduled run: model batches, then up to 30 minutes of polling.
- * A hold that expires first releases its credits, so the run is not charged.
+ * Autumn's longest lock, less a minute for clock skew: the run reads late
+ * answers until shortly before it. A hold that expires first releases its
+ * credits, so the run is not charged.
  */
-const AI_TRACKING_HOLD_TTL_MS = 2 * 60 * 60_000;
+export const AI_TRACKING_HOLD_TTL_MS = 24 * 60 * 60_000 - 60_000;
 
 export async function postAiTrackingTasksOnHold(
   customer: BillingCustomerContext,

@@ -7,11 +7,11 @@ import {
   collectAiLiveBatch,
   collectAiModelBatch,
   collectAiRound,
-  finalizeAiRun,
+  collectLateAiAnswers,
   postAiBatch,
   prepareAiRun,
 } from "./aiVisibilityCollection";
-import { AI_ANSWER_FAILURES } from "./aiVisibilityErrors";
+import { finalizeAiRun } from "./aiVisibilityRunOutcome";
 import { configuration, customer } from "./aiVisibilityTestFixtures";
 
 const { testDb, dataforseo } = await vi.hoisted(async () => {
@@ -418,21 +418,21 @@ describe("AI answer collection", () => {
     });
   });
 
-  it("fails answers that never arrived and finishes the run as partial", async () => {
+  it("fills in an answer that arrives after the run finished, and clears the notice", async () => {
     dataforseo.fetchTaskResult.mockResolvedValue(liveAnswer.value);
     await collectAiRound(runId, [pendingTask], true);
-
     await finalizeAiRun(runId);
 
-    expect(await repo.getRunInternal(runId)).toMatchObject({
-      status: "partial",
-    });
+    const late = { ...pendingTask, tag: "answer-1" };
+    expect(await collectLateAiAnswers(runId, [late])).toEqual([]);
+
     expect(await repo.getObservation("answer-1")).toMatchObject({
-      status: "failed",
-      error: AI_ANSWER_FAILURES.notArrived,
+      status: "completed",
+      error: null,
     });
-    expect((await repo.getTracker("project"))?.lastSkipReason).toBe(
-      AI_ANSWER_FAILURES.notCollected,
-    );
+    expect(await repo.getRunInternal(runId)).toMatchObject({
+      status: "completed",
+    });
+    expect((await repo.getTracker("project"))?.lastSkipReason).toBeNull();
   });
 });

@@ -27,7 +27,7 @@ import type { AiPostedHold } from "./aiVisibilityBilling";
 import { aiBrands } from "./aiVisibilityConfiguration";
 import { AI_ANSWER_FAILURES } from "./aiVisibilityErrors";
 import { matchAiBrand } from "./aiVisibilityMatching";
-import { failAiRun } from "./aiVisibilityRuns";
+import { recordAiRunOutcome } from "./aiVisibilityRunOutcome";
 
 // Each function here is one workflow step body: inputs are its parameters and
 // the return value is what the workflow engine persists and replays.
@@ -343,32 +343,73 @@ export async function collectAiRound(
   const unsaved = tasks.filter((task) => stillPending.has(task.tag));
   const pending: AiPendingTask[] = [];
   const retry: AiPendingTask[] = [];
-  for (let i = 0; i < unsaved.length; i += TASK_GET_CONCURRENCY) {
-    const chunk = unsaved.slice(i, i + TASK_GET_CONCURRENCY);
+  await readAiTasks(unsaved, async (task, result) => {
+    if (result.status === "pending") return pending.push(task);
+    if (
+      canRetry &&
+      result.status === "failed" &&
+      result.retryable &&
+      task.attempts < AI_ANSWER_ATTEMPTS
+    )
+      return retry.push(task);
+    await saveAiOutcome(runId, task, result, brands);
+  });
+  return { pending, retry: engineBatches(retry, MAX_TASKS_PER_POST) };
+}
+
+/**
+ * Reads answers that missed the collection window, after the run finished
+ * (task_get stays free for 30 days), and saves the ones DataForSEO has since
+ * returned, so a provider delay fills the run in late. Returns the tasks still
+ * missing.
+ */
+export async function collectLateAiAnswers(
+  runId: string,
+  tasks: AiPendingTask[],
+): Promise<AiPendingTask[]> {
+  const brands = await runBrands(runId);
+  if (!brands) return [];
+  const missing = new Set(
+    await repo.listFailedObservationIds(runId, AI_ANSWER_FAILURES.notArrived),
+  );
+  const pending: AiPendingTask[] = [];
+  await readAiTasks(
+    tasks.filter((task) => missing.has(task.tag)),
+    async (task, result) => {
+      if (result.status === "pending") return pending.push(task);
+      // DataForSEO failed it: the answer keeps its not-arrived message.
+      if (result.status === "failed") return;
+      await saveAiOutcome(runId, task, result, brands);
+    },
+  );
+  // Every read, not only one that saved: a retried step skips the answers an
+  // earlier attempt saved before failing here.
+  await recordAiRunOutcome(runId);
+  return pending;
+}
+
+/**
+ * Reads each task once (task_get is free), a chunk at a time, and hands each
+ * result over as it comes. A failed read counts as pending, to be read again.
+ */
+async function readAiTasks(
+  tasks: AiPendingTask[],
+  onResult: (
+    task: AiPendingTask,
+    result: Awaited<ReturnType<typeof fetchAiTrackingTaskResult>>,
+  ) => Promise<unknown>,
+) {
+  for (let i = 0; i < tasks.length; i += TASK_GET_CONCURRENCY) {
+    const chunk = tasks.slice(i, i + TASK_GET_CONCURRENCY);
     const outcomes = await Promise.allSettled(
       chunk.map((task) => fetchAiTrackingTaskResult(task)),
     );
-    for (const [index, outcome] of outcomes.entries()) {
-      const task = chunk[index];
-      // A failed read is retried next round.
-      if (outcome.status === "rejected" || outcome.value.status === "pending") {
-        pending.push(task);
-        continue;
-      }
-      const result = outcome.value;
-      if (
-        canRetry &&
-        result.status === "failed" &&
-        result.retryable &&
-        task.attempts < AI_ANSWER_ATTEMPTS
-      ) {
-        retry.push(task);
-        continue;
-      }
-      await saveAiOutcome(runId, task, result, brands);
-    }
+    for (const [index, outcome] of outcomes.entries())
+      await onResult(
+        chunk[index],
+        outcome.status === "fulfilled" ? outcome.value : { status: "pending" },
+      );
   }
-  return { pending, retry: engineBatches(retry, MAX_TASKS_PER_POST) };
 }
 
 /** Brands come from the project as each answer is matched. */
@@ -430,42 +471,4 @@ async function saveAiAnswer(
       ...matchAiBrand(answer, brand),
     })),
   });
-}
-
-/**
- * Fails answers that never arrived, records how the run finished, and tells
- * the tracker when answers went missing (settleAiRun charged none of them).
- */
-export async function finalizeAiRun(runId: string) {
-  const run = await repo.getRunInternal(runId);
-  if (!run || run.status !== "running") return;
-  const missing = await repo.listPendingObservationIds(runId);
-  await repo.failPendingObservations(runId, AI_ANSWER_FAILURES.notArrived);
-  const statuses = await repo.getObservationStatuses([runId]);
-  const completed = statuses.filter((row) => row.status === "completed").length;
-  const status =
-    completed === statuses.length
-      ? "completed"
-      : completed > 0
-        ? "partial"
-        : "failed";
-  await repo.updateRun(runId, {
-    status,
-    completedAt: new Date().toISOString(),
-  });
-  await repo.updateTracker(run.trackerId, {
-    lastSkipReason: missing.length
-      ? AI_ANSWER_FAILURES.notCollected
-      : status === "failed"
-        ? AI_ANSWER_FAILURES.runFailed
-        : null,
-  });
-}
-
-/** The workflow's failure path: fail the run and say why on the tracker. */
-export async function markAiRunFailed(runId: string) {
-  const message = AI_ANSWER_FAILURES.runFailed;
-  await failAiRun(runId, message);
-  const run = await repo.getRunInternal(runId);
-  if (run) await repo.updateTracker(run.trackerId, { lastSkipReason: message });
 }

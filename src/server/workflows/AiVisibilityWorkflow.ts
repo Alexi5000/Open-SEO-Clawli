@@ -8,18 +8,22 @@ import {
   collectAiLiveBatch,
   collectAiModelBatch,
   collectAiRound,
-  finalizeAiRun,
-  markAiRunFailed,
+  collectLateAiAnswers,
   postAiBatch,
   prepareAiRun,
   type AiPendingTask,
 } from "@/server/features/ai-visibility/services/aiVisibilityCollection";
+import {
+  finalizeAiRun,
+  markAiRunFailed,
+} from "@/server/features/ai-visibility/services/aiVisibilityRunOutcome";
 import {
   settleAiRun,
   type AiPostedHold,
 } from "@/server/features/ai-visibility/services/aiVisibilityBilling";
 import { runAiResearchSetup } from "@/server/features/ai-visibility/services/aiResearchKeywords";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
+import { AI_TRACKING_HOLD_TTL_MS } from "@/server/lib/dataforseo";
 import { describeError } from "@/server/lib/errors";
 
 // One binding serves answer collection runs and the one-time research setup,
@@ -54,8 +58,9 @@ const COLLECT_STEP = {
 const LIVE_STEP = { ...SINGLE_ATTEMPT, timeout: "10 minutes" as const };
 // Standard-queue answers usually arrive within minutes. Cumulative waits are
 // 2 / 4 / 7 / 10 / 14 / 18 / 22 / 26 / 30 minutes; anything still missing then
-// fails as not collected. Each sleep stays under 5 minutes, like rank check's:
-// the engine cancels an invocation idling in a longer sleep.
+// fails as not collected, until a late read finds it. Each sleep stays under 5
+// minutes, like rank check's: the engine cancels an invocation idling in a
+// longer sleep.
 const POLL_INTERVALS = [
   "2 minutes",
   "2 minutes",
@@ -67,6 +72,12 @@ const POLL_INTERVALS = [
   "4 minutes",
   "4 minutes",
 ] as const;
+// After the run finishes, answers DataForSEO has not returned yet are read
+// every 30 minutes, so a provider delay fills the run in late without holding
+// up the tracker. Reads stop an hour before the credit hold expires, which
+// leaves time to settle it; the hold starts after the workflow does.
+const LATE_READ_INTERVAL_MS = 30 * 60_000;
+const LATE_READS_FOR_MS = AI_TRACKING_HOLD_TTL_MS - 60 * 60_000;
 
 export class AiVisibilityWorkflow extends WorkflowEntrypoint<
   Env,
@@ -90,7 +101,7 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
     const { runId, customer } = payload;
     let pending: AiPendingTask[] = [];
     // Each posted batch holds credits until settle charges the answers that
-    // arrived, once collection ends or the run fails.
+    // arrived, once late reads end or the run fails.
     const holds: AiPostedHold[] = [];
     // A run in flight across the deploy that added holds replays an older
     // post output, the bare task list, which was charged when posted.
@@ -233,11 +244,34 @@ export class AiVisibilityWorkflow extends WorkflowEntrypoint<
       // A task posted after the last round would never be read.
       await collect(`${round}`, round < POLL_INTERVALS.length - 1);
     }
-    await settle();
+    let finishedAt: number;
     try {
-      await pgStep(step, "finalize", FREE_STEP, () => finalizeAiRun(runId));
+      finishedAt = await pgStep(step, "finalize", FREE_STEP, async () => {
+        await finalizeAiRun(runId);
+        return Date.now();
+      });
     } catch (error) {
       return failRun(error);
     }
+    const lateUntil = event.timestamp.getTime() + LATE_READS_FOR_MS;
+    for (let round = 1; pending.length > 0; round++) {
+      const wakeAt = finishedAt + round * LATE_READ_INTERVAL_MS;
+      if (wakeAt > lateUntil) break;
+      // Uncaught: the engine cancels an invocation idling this long and
+      // resumes the instance on wake, so the rejection is no failure, and
+      // settling here would charge before late answers arrive.
+      await step.sleepUntil(`late-wait-${round}`, wakeAt);
+      try {
+        pending = await pgStep(step, `late-${round}`, COLLECT_STEP, () =>
+          collectLateAiAnswers(runId, pending),
+        );
+      } catch (error) {
+        // Read again next round.
+        console.warn(
+          `[ai-visibility] ${runId} late-${round}: ${describeError(error)}`,
+        );
+      }
+    }
+    await settle();
   }
 }

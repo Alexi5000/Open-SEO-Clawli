@@ -17,9 +17,9 @@ export class AiVisibilityError extends AppError {
  */
 export const AI_ANSWER_FAILURES = {
   notArrived:
-    "Our data provider didn't return this answer in time. It used no credits.",
+    "Our data provider hasn't returned this answer yet. You'll only be charged credits if we get it, and the answer will appear here.",
   notCollected:
-    "Our data provider didn't return some answers in time. They used no credits, and the next check asks again.",
+    "Our data provider hasn't returned some answers yet. You'll only be charged credits for the ones we get.",
   runFailed: "The last check could not collect answers.",
   notStarted: "Collection could not start.",
   stoppedBeforeStart: "Collection stopped before it started.",

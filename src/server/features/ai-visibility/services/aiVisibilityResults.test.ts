@@ -155,7 +155,7 @@ describe("AI visibility results", () => {
       { failed: "DataForSEO returned an answer we could not read." },
       {
         failed:
-          "Our data provider didn't return this answer in time. It used no credits.",
+          "Our data provider hasn't returned this answer yet. You'll only be charged credits if we get it, and the answer will appear here.",
       },
     ]);
 
@@ -168,7 +168,7 @@ describe("AI visibility results", () => {
     expect(results.rows.map((row) => row.error)).toEqual([
       "UPSTREAM_UNAVAILABLE",
       "INTERNAL_ERROR",
-      "Our data provider didn't return this answer in time. It used no credits.",
+      "Our data provider hasn't returned this answer yet. You'll only be charged credits if we get it, and the answer will appear here.",
     ]);
   });
 

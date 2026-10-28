@@ -8,10 +8,12 @@ const mocks = vi.hoisted(() => ({
   live: vi.fn(),
   model: vi.fn(),
   collect: vi.fn(),
+  late: vi.fn(),
   settle: vi.fn(),
   finalize: vi.fn(),
   markFailed: vi.fn(),
   sleep: vi.fn(),
+  sleepUntil: vi.fn(),
   steps: vi.fn(),
 }));
 vi.mock("cloudflare:workers", () => ({ WorkflowEntrypoint: vi.fn() }));
@@ -26,6 +28,12 @@ vi.mock(
     collectAiLiveBatch: mocks.live,
     collectAiModelBatch: mocks.model,
     collectAiRound: mocks.collect,
+    collectLateAiAnswers: mocks.late,
+  }),
+);
+vi.mock(
+  "@/server/features/ai-visibility/services/aiVisibilityRunOutcome",
+  () => ({
     finalizeAiRun: mocks.finalize,
     markAiRunFailed: mocks.markFailed,
   }),
@@ -53,16 +61,19 @@ const customer = {
 const task = { tag: "answer", taskId: "task", engine: "chatgpt" };
 const hold = { hold: { lockId: "lock" }, path: [], tasks: [task] };
 function execute() {
-  // The mocked base and pgStep use no execution context, bindings, or step methods besides sleep.
+  // The mocked base and pgStep use no execution context, bindings, or step methods besides the sleeps.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- minimal test runtime boundary
   const workflow = new AiVisibilityWorkflow({} as ExecutionContext, {} as Env);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- pgStep is mocked; only sleep executes
-  const step = { sleep: mocks.sleep } as unknown as WorkflowStep;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- pgStep is mocked; only the sleeps execute
+  const step = {
+    sleep: mocks.sleep,
+    sleepUntil: mocks.sleepUntil,
+  } as unknown as WorkflowStep;
   return workflow.run(
     {
       payload: { runId: "run", customer },
       instanceId: "run",
-      timestamp: new Date("2026-09-05T12:00:00Z"),
+      timestamp: new Date(),
     },
     step,
   );
@@ -79,6 +90,7 @@ beforeEach(() => {
   });
   mocks.post.mockResolvedValue({ pending: [task], hold });
   mocks.collect.mockResolvedValue({ pending: [], retry: [] });
+  mocks.late.mockResolvedValue([]);
 });
 
 describe("AI visibility workflow", () => {
@@ -140,11 +152,27 @@ describe("AI visibility workflow", () => {
     expect(mocks.finalize).toHaveBeenCalledExactlyOnceWith("run");
   });
 
-  it("stops polling when the collection window closes and finalizes what arrived", async () => {
+  it("finishes the run when the collection window closes, then reads missing answers late before settling", async () => {
     mocks.collect.mockResolvedValue({ pending: [task], retry: [] });
     await execute();
     expect(mocks.sleep).toHaveBeenCalledTimes(9);
     expect(mocks.finalize).toHaveBeenCalledOnce();
+    expect(mocks.late).toHaveBeenCalledExactlyOnceWith("run", [task]);
+    expect(mocks.finalize.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.late.mock.invocationCallOrder[0],
+    );
+    expect(mocks.late.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.settle.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("stops reading late answers before the credit hold expires, then settles", async () => {
+    mocks.collect.mockResolvedValue({ pending: [task], retry: [] });
+    mocks.late.mockResolvedValue([task]);
+    await execute();
+    // Every 30 minutes for the 23 hours before the 24-hour hold expires.
+    expect(mocks.late).toHaveBeenCalledTimes(45);
+    expect(mocks.settle).toHaveBeenCalledOnce();
   });
 
   it("posts failed answers again in a step that never retries, but not after the last round", async () => {
