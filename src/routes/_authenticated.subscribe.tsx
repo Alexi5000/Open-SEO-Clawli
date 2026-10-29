@@ -19,7 +19,6 @@ import {
   AGENCY_PLAN_OFFER,
   BASE_PLAN_OFFER,
   PRO_PLAN_OFFER,
-  getPlanName,
   monthlyCreditsFeature,
   type PlanOffer,
 } from "@/client/features/billing/plan-offers";
@@ -142,6 +141,7 @@ function SubscribePage() {
   });
   const account = accountQuery.data;
   const paidPlanId = account?.paidPlanId ?? null;
+  const paidPlanName = account?.paidPlanName ?? null;
 
   // Checkout is owner-only; other members hitting the paywall are pointed at
   // their organization owner instead of a Subscribe button that would 403.
@@ -182,7 +182,7 @@ function SubscribePage() {
         toast.info(
           paidPlanId === wanted.planId
             ? `You're already on the ${wanted.name}`
-            : `You're on the ${getPlanName(paidPlanId)}`,
+            : `You're on the ${paidPlanName}`,
           {
             id: "subscribe-plan-switch",
             description:
@@ -199,6 +199,7 @@ function SubscribePage() {
     checkoutCompleted,
     navigate,
     paidPlanId,
+    paidPlanName,
     redirect,
     requestedPlan,
     subscribeRouteState,

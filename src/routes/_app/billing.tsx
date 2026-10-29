@@ -29,10 +29,7 @@ import { BillingTabs } from "@/client/features/billing/BillingTabs";
 import { parseTopUpAmount } from "@/client/features/billing/HostedBillingContentUtils";
 import { billingUsageQueryOptions } from "@/client/features/billing/useBillingUsage";
 import { useCreditBalance } from "@/client/features/billing/useCreditBalance";
-import {
-  BASE_PLAN_OFFER,
-  getPlanName,
-} from "@/client/features/billing/plan-offers";
+import { BASE_PLAN_OFFER } from "@/client/features/billing/plan-offers";
 import {
   createBillingPortalSession,
   createTopUpCheckout,
@@ -215,7 +212,7 @@ function BillingPage() {
                 account.paidPlanId ? (
                   <>
                     <span className="text-foreground">
-                      {getPlanName(account.paidPlanId)}
+                      {account.paidPlanName}
                     </span>{" "}
                     &middot; ${account.monthlyCreditsUsd.toFixed(2)} of credits
                     each month

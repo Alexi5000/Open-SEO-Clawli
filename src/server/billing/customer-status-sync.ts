@@ -14,7 +14,11 @@ import { syncBillingStatusToLoops } from "./loops-sync";
 export async function syncAutumnCustomerStatus(customerId: string) {
   // getOrCreate is effectively a "get" here — a billing.updated webhook always
   // references an existing Autumn customer. The SDK returns the camelCase shape.
-  const customer = await autumn.customers.getOrCreate({ customerId });
+  // The expanded plan tells the lifecycle emails whether it charges money.
+  const customer = await autumn.customers.getOrCreate({
+    customerId,
+    expand: ["subscriptions.plan"],
+  });
   const snapshot = deriveBillingCustomerStatusSnapshot(customer);
   // Auto-reload charges the saved card; a plan that ended must not keep it.
   await disableAutoReloadIfUnpaid(customerId);
