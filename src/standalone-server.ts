@@ -1,3 +1,9 @@
+import { installAesKw } from "./server/standalone/aes-kw";
+
+// celld has no AES-KW, which MCP OAuth needs. package.json lists this file
+// under sideEffects so the bundler keeps this call.
+installAesKw();
+
 // Keep all workflow and object classes in the same celld deployment: celld
 // does not support workflow bindings targeting another script.
 export {
