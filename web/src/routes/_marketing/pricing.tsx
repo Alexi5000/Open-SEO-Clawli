@@ -82,13 +82,18 @@ const CREDITS_PER_UNIT = {
  * Plans — the cards at the top of the page. Pro and Agency include 20%
  * more usage than their price.
  * ------------------------------------------------------------------ */
+/** The plan's ?plan= value on the app's subscribe page. */
+type CheckoutPlan = "base" | "pro" | "agency";
+
 type Plan = {
   name: string;
+  id: CheckoutPlan;
   priceUsd: number;
+  /** The yearly price, 2 months free. */
+  annualPriceUsd: number;
   includedUsageUsd: number;
   audience: string;
   features: string[];
-  signUpHref: string;
   /** Small print under the button. Every card keeps the line so they align. */
   signUpNote?: string;
   contactHref?: string;
@@ -97,10 +102,17 @@ type Plan = {
 
 const SIGN_UP_URL = "https://app.openseo.so/sign-up";
 
-/** Sign-up that goes straight to this plan's checkout in the app. */
-function checkoutSignUpUrl(plan: "pro" | "agency") {
+/**
+ * Sign-up that goes straight to this plan on the app's subscribe page. Base
+ * monthly is the free trial, so it stays a plain sign-up.
+ */
+function signUpHref(plan: CheckoutPlan, yearly: boolean) {
+  if (plan === "base" && !yearly) return SIGN_UP_URL;
   const url = new URL(SIGN_UP_URL);
-  url.searchParams.set("redirect", `/subscribe?upgrade=true&plan=${plan}`);
+  url.searchParams.set(
+    "redirect",
+    `/subscribe?upgrade=true&plan=${plan}${yearly ? "&billing=yearly" : ""}`,
+  );
   return url.href;
 }
 
@@ -109,9 +121,10 @@ const PAY_AS_YOU_GO = "Pay as you go for extra usage";
 const PLANS: Plan[] = [
   {
     name: "Base",
-    signUpHref: SIGN_UP_URL,
+    id: "base",
     signUpNote: "Try for free",
     priceUsd: BASE_PRICE_USD,
+    annualPriceUsd: 100,
     includedUsageUsd: BASE_INCLUDED_CREDIT_USD,
     audience: "For your own website.",
     features: [
@@ -125,8 +138,9 @@ const PLANS: Plan[] = [
   },
   {
     name: "Pro",
-    signUpHref: checkoutSignUpUrl("pro"),
+    id: "pro",
     priceUsd: 30,
+    annualPriceUsd: 300,
     includedUsageUsd: 36,
     audience: "For freelancers and growing teams.",
     features: [
@@ -138,8 +152,9 @@ const PLANS: Plan[] = [
   },
   {
     name: "Agency",
-    signUpHref: checkoutSignUpUrl("agency"),
+    id: "agency",
     priceUsd: 200,
+    annualPriceUsd: 2000,
     includedUsageUsd: 240,
     audience: "For agencies with many clients.",
     features: [
@@ -194,6 +209,7 @@ const usd = (n: number) =>
 
 function Pricing() {
   const [persona, setPersona] = useState<"business" | "freelancer">("business");
+  const [yearly, setYearly] = useState(false);
   const [inputs, setInputs] = useState<Inputs>(PRESETS.business);
 
   function applyPersona(next: "business" | "freelancer") {
@@ -278,12 +294,38 @@ function Pricing() {
       </div>
 
       {/* 2. Plans */}
+      <div
+        className="mx-auto mt-10 flex w-fit rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-1"
+        role="group"
+        aria-label="Billing period"
+      >
+        {(
+          [
+            [false, "Monthly"],
+            [true, "Yearly (2 months free)"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setYearly(value)}
+            aria-pressed={yearly === value}
+            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
+              yearly === value
+                ? "border border-[var(--color-border-subtle)] bg-white text-neutral-950 shadow-sm"
+                : "border border-transparent text-neutral-600 hover:text-neutral-950"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <section
         aria-label="Plans"
-        className="mt-10 grid gap-5 md:grid-cols-3 md:items-stretch"
+        className="mt-6 grid gap-5 md:grid-cols-3 md:items-stretch"
       >
         {PLANS.map((plan) => (
-          <PlanCard key={plan.name} plan={plan} />
+          <PlanCard key={plan.name} plan={plan} yearly={yearly} />
         ))}
       </section>
 
@@ -552,7 +594,7 @@ function Pricing() {
   );
 }
 
-function PlanCard({ plan }: { plan: Plan }) {
+function PlanCard({ plan, yearly }: { plan: Plan; yearly: boolean }) {
   return (
     <div
       className={`flex flex-col rounded-xl border bg-white p-6 ${
@@ -566,16 +608,16 @@ function PlanCard({ plan }: { plan: Plan }) {
         {plan.audience}
       </p>
       <p className="mt-5 text-4xl font-semibold tabular-nums tracking-tight text-neutral-950">
-        ${plan.priceUsd}
+        ${(yearly ? plan.annualPriceUsd : plan.priceUsd).toLocaleString()}
         <span className="text-base font-normal text-[var(--color-brand-muted)]">
-          /mo
+          {yearly ? "/yr" : "/mo"}
         </span>
       </p>
       <p className="mt-1 text-sm font-medium text-neutral-800">
         Includes ${plan.includedUsageUsd} of usage every month
       </p>
       <a
-        href={plan.signUpHref}
+        href={signUpHref(plan.id, yearly)}
         className={`mt-6 inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-sm font-medium transition-colors ${
           plan.featured
             ? "bg-neutral-950 text-white hover:bg-neutral-800"
@@ -588,7 +630,7 @@ function PlanCard({ plan }: { plan: Plan }) {
         </span>
       </a>
       <p className="mt-2 h-4 text-center text-xs text-neutral-500">
-        {plan.signUpNote}
+        {yearly ? null : plan.signUpNote}
       </p>
       <ul className="mt-4 space-y-2.5 border-t border-[var(--color-border-subtle)] pt-6">
         {plan.features.map((item) => (

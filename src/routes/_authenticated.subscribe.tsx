@@ -13,15 +13,18 @@ import {
   openUpgradeCheckout,
   prefetchUpgradeCheckout,
 } from "@/client/features/billing/checkout";
+import { AnnualPlanDialog } from "@/client/features/billing/AnnualPlanDialog";
 import { PlanPageAccountMenu } from "@/client/features/billing/PlanPageAccountMenu";
-import { PlanOfferCard } from "@/client/features/billing/PlanOfferCard";
 import {
-  AGENCY_PLAN_OFFER,
-  BASE_PLAN_OFFER,
-  PRO_PLAN_OFFER,
-  monthlyCreditsFeature,
-  type PlanOffer,
-} from "@/client/features/billing/plan-offers";
+  PlanGuarantee,
+  PlanOfferCard,
+} from "@/client/features/billing/PlanOfferCard";
+import { monthlyCreditsFeature } from "@/client/features/billing/plan-offers";
+import {
+  TIERS,
+  isTier,
+  type Tier,
+} from "@/client/features/billing/subscribe-tiers";
 import { captureClientEvent } from "@/client/lib/posthog";
 import { useSession } from "@/lib/auth-client";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
@@ -34,39 +37,6 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/client/components/ui/toggle-group";
-
-const PLAN_FEATURES = [
-  "Keyword research, backlinks, rank tracking, and site audits",
-  "MCP server and agent skills for Claude, Cursor, and ChatGPT",
-  "Google Search Console Integration",
-];
-
-// The tiers on openseo.so/pricing. Its "Get started" links preselect one with
-// ?plan=.
-const TIERS = {
-  base: { label: "Base", offer: BASE_PLAN_OFFER, perks: [] },
-  pro: {
-    label: "Pro",
-    offer: PRO_PLAN_OFFER,
-    perks: ["Priority email support"],
-  },
-  agency: {
-    label: "Agency",
-    offer: AGENCY_PLAN_OFFER,
-    perks: [
-      "Dedicated Slack Connect channel",
-      "AI enablement: hands-on help setting up agents and workflows for your team",
-    ],
-  },
-} satisfies Record<
-  string,
-  { label: string; offer: PlanOffer; perks: string[] }
->;
-type Tier = keyof typeof TIERS;
-
-function isTier(value: unknown): value is Tier {
-  return typeof value === "string" && Object.hasOwn(TIERS, value);
-}
 
 // How long the post-checkout "finalizing" screen polls Autumn before giving
 // up and letting the user through anyway, and how often it polls.
@@ -84,6 +54,7 @@ export const Route = createFileRoute("/_authenticated/subscribe")({
     redirect?: string;
     checkout?: "success";
     plan?: Tier;
+    billing?: "yearly";
   } => ({
     upgrade:
       search.upgrade === true || search.upgrade === "true" ? true : undefined,
@@ -93,6 +64,7 @@ export const Route = createFileRoute("/_authenticated/subscribe")({
         : undefined,
     checkout: search.checkout === "success" ? "success" : undefined,
     plan: isTier(search.plan) ? search.plan : undefined,
+    billing: search.billing === "yearly" ? "yearly" : undefined,
   }),
   loaderDeps: ({ search: { upgrade, checkout, plan } }) => ({
     upgrade,
@@ -118,11 +90,18 @@ function SubscribePage() {
     redirect,
     checkout,
     plan: requestedPlan,
+    billing,
   } = Route.useSearch();
-  const plan = requestedPlan ?? "base";
-  const { offer, perks } = TIERS[plan];
+  const highlightedPlan = requestedPlan ?? "base";
   const { data: session } = useSession();
-  const [isAttaching, setIsAttaching] = useState(false);
+  // The plan whose checkout is opening, so only its button spins.
+  const [attachingPlan, setAttachingPlan] = useState<Tier | null>(null);
+  // The pricing page's Yearly switch carries over with ?billing=yearly.
+  const [yearly, setYearly] = useState(billing === "yearly");
+  // The yearly dialog keeps its last plan so its text doesn't blank out while
+  // it animates closed.
+  const [annualPlan, setAnnualPlan] = useState<Tier>("base");
+  const [annualDialogOpen, setAnnualDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [finalizingTimedOut, setFinalizingTimedOut] = useState(false);
   const checkoutCompleted = checkout === "success";
@@ -255,12 +234,12 @@ function SubscribePage() {
     );
   }
 
-  async function handleSubscribe() {
+  async function handleSubscribe(tier: Tier) {
     setError(null);
-    setIsAttaching(true);
+    setAttachingPlan(tier);
 
     try {
-      await openUpgradeCheckout(offer.planId);
+      await openUpgradeCheckout(TIERS[tier].offer.planId);
     } catch (err) {
       setError(
         getStandardErrorMessage(
@@ -268,17 +247,26 @@ function SubscribePage() {
           "We couldn't start the checkout. Please try again.",
         ),
       );
-      setIsAttaching(false);
+      setAttachingPlan(null);
     }
   }
 
+  function openAnnualDialog(tier: Tier) {
+    setAnnualPlan(tier);
+    setAnnualDialogOpen(true);
+    captureClientEvent("billing:annual_plan_interest", {
+      planId: TIERS[tier].offer.planId,
+    });
+  }
+
   const firstName = session?.user?.name?.split(" ")[0] || "";
+  const annual = TIERS[annualPlan];
 
   return (
-    <div className="w-full max-w-sm space-y-6">
+    <div className="w-full max-w-5xl space-y-6">
       <PlanPageAccountMenu email={session?.user?.email} />
 
-      <div className="space-y-3 text-center">
+      <div className="mx-auto max-w-sm space-y-3 text-center">
         <img
           src="/transparent-logo.png"
           alt="OpenSEO"
@@ -299,81 +287,97 @@ function SubscribePage() {
       <ToggleGroup
         variant="outline"
         spacing={0}
-        value={[plan]}
-        // The checkout being opened is for the plan picked when Subscribe was
-        // clicked; switching now would show one plan and charge another.
-        disabled={isAttaching}
+        value={[yearly ? "yearly" : "monthly"]}
         onValueChange={(next) => {
           // A press on the active item empties the group. Keep one item on.
-          const picked = next[0];
-          if (isTier(picked)) {
-            setError(null);
-            void navigate({
-              to: ".",
-              search: (prev) => ({ ...prev, plan: picked }),
-              replace: true,
-            });
-          }
+          if (next[0]) setYearly(next[0] === "yearly");
         }}
-        className="w-full"
-        aria-label="Plan"
+        className="mx-auto"
+        aria-label="Billing period"
       >
-        {Object.entries(TIERS).map(([tier, { label }]) => (
-          <ToggleGroupItem
-            key={tier}
-            value={tier}
-            className="flex-1 aria-pressed:bg-primary/15 aria-pressed:text-primary"
-          >
-            {label}
-          </ToggleGroupItem>
-        ))}
+        <ToggleGroupItem
+          value="monthly"
+          className="px-4 aria-pressed:bg-primary/15 aria-pressed:text-primary"
+        >
+          Monthly
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="yearly"
+          className="px-4 aria-pressed:bg-primary/15 aria-pressed:text-primary"
+        >
+          Yearly (2 months free)
+        </ToggleGroupItem>
       </ToggleGroup>
 
-      <PlanOfferCard
-        offer={offer}
-        features={[...PLAN_FEATURES, ...perks, monthlyCreditsFeature(offer)]}
-        afterFeatures={
-          /* Sub-bullet of the Usage Credits line above. */
-          <li className="-mt-1 pl-6 text-xs">
-            <a
-              className="text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-4 transition-colors hover:text-foreground"
-              href="https://openseo.so/pricing"
-              target="_blank"
-              rel="noreferrer"
-              onClick={() =>
-                captureClientEvent("billing:pricing_estimator_click")
-              }
-            >
-              How far do usage credits go?{" "}
-              <span aria-hidden="true">&#8599;</span>
-            </a>
-          </li>
-        }
-      >
+      <div className="grid gap-4 md:grid-cols-3">
+        {Object.keys(TIERS)
+          .filter(isTier)
+          .map((tier) => {
+            const { offer, annualPriceUsd, description, features } =
+              TIERS[tier];
+            return (
+              <PlanOfferCard
+                key={tier}
+                offer={offer}
+                description={description}
+                priceLabel={
+                  yearly
+                    ? `$${annualPriceUsd.toLocaleString()}/year`
+                    : undefined
+                }
+                features={[...features, monthlyCreditsFeature(offer)]}
+                highlighted={tier === highlightedPlan}
+              >
+                {canManageBilling ? (
+                  <Button
+                    className="w-full"
+                    variant={tier === highlightedPlan ? "default" : "secondary"}
+                    pending={attachingPlan === tier}
+                    // One checkout at a time: a second one would replace the first.
+                    disabled={attachingPlan !== null}
+                    onClick={() =>
+                      yearly
+                        ? openAnnualDialog(tier)
+                        : void handleSubscribe(tier)
+                    }
+                  >
+                    {attachingPlan === tier ? "Redirecting..." : "Subscribe"}
+                  </Button>
+                ) : null}
+              </PlanOfferCard>
+            );
+          })}
+      </div>
+
+      <div className="mx-auto max-w-sm space-y-3">
         {error ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-center text-sm text-destructive">
             {error}
           </p>
         ) : null}
-
-        {canManageBilling ? (
-          <Button
-            className="w-full"
-            variant="secondary"
-            pending={isAttaching}
-            onClick={() => void handleSubscribe()}
-          >
-            {isAttaching ? "Redirecting..." : "Subscribe"}
-          </Button>
-        ) : (
-          <p className="text-sm text-muted-foreground">
+        {canManageBilling ? null : (
+          <p className="text-center text-sm text-muted-foreground">
             Only the organization owner can subscribe. Ask them to upgrade this
             organization.
           </p>
         )}
-      </PlanOfferCard>
+        <PlanGuarantee />
+        <p className="text-center text-xs">
+          <a
+            className="text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-4 transition-colors hover:text-foreground"
+            href="https://openseo.so/pricing"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() =>
+              captureClientEvent("billing:pricing_estimator_click")
+            }
+          >
+            How far do usage credits go? <span aria-hidden="true">&#8599;</span>
+          </a>
+        </p>
+      </div>
 
-      <div className="text-center space-y-2">
+      <div className="mx-auto max-w-sm text-center space-y-2">
         <p className="text-sm text-muted-foreground">
           Questions? Email{" "}
           <a
@@ -395,6 +399,14 @@ function SubscribePage() {
           </Button>
         ) : null}
       </div>
+
+      <AnnualPlanDialog
+        open={annualDialogOpen}
+        onOpenChange={setAnnualDialogOpen}
+        planName={annual.offer.name}
+        annualPriceUsd={annual.annualPriceUsd}
+        onSubscribeMonthly={() => void handleSubscribe(annualPlan)}
+      />
     </div>
   );
 }
