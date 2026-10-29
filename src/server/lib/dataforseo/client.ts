@@ -65,6 +65,7 @@ import {
   settleAiTrackingHold,
   type AiTrackingHold,
 } from "@/server/lib/dataforseo/ai-tracking-billing";
+import { inDataforseoSlot } from "@/server/lib/dataforseo/request-slots";
 import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 import { AppError } from "@/server/lib/errors";
 
@@ -209,6 +210,18 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
     },
     serp: {
       live: meter(customer, fetchLiveSerp, dataforseoPricing.serp.live),
+      // Settles only after every live SERP has answered: a Worker request
+      // queues its 7th fetch still waiting for response headers, so a per-call
+      // settle sent while other live SERPs are still running can time out
+      // before it reaches Autumn. Resolves per call, in order.
+      liveBatch: (inputs: Parameters<typeof fetchLiveSerp>[0][]) =>
+        meterDataforseoCalls(
+          customer,
+          inputs.map((input) => () => fetchLiveSerp(input)),
+          inputs.map((input) =>
+            creditsForProviderUsd(dataforseoPricing.serp.live(input)),
+          ),
+        ),
       // A rank check batch shares one credit hold and one settle across its
       // live calls (see meterDataforseoCalls). Resolves per call, in order.
       rankCheckBatch: (inputs: Parameters<typeof fetchRankCheckSerp>[0][]) =>
@@ -436,9 +449,12 @@ async function meterDataforseoCall<T>(
   estimatedCredits: number,
   creditFeature?: CreditFeature,
 ): Promise<T> {
+  // Each single call settles as soon as it answers, so cap how many run at
+  // once (request-slots.ts). A batch settles after all of its calls answer,
+  // so it doesn't need the cap.
   const [result] = await meterDataforseoCalls(
     customer,
-    [execute],
+    [() => inDataforseoSlot(execute)],
     [estimatedCredits],
     creditFeature,
   );
