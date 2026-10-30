@@ -400,10 +400,20 @@ export class RankCheckWorkflow extends WorkflowEntrypoint<
         }),
       );
     } catch (error) {
-      console.error(
-        `Rank check ${runId} failed: ${describeError(error)}`,
-        error,
-      );
+      // Cloudflare resets the Workflow's Durable Object on a deploy or its own
+      // restarts. The engine replays the run from its last finished step and
+      // it completes normally, so this is a warning, not a failure.
+      if (
+        error instanceof Error &&
+        error.message.includes("Durable Object reset because its code")
+      ) {
+        console.warn(`Rank check ${runId} interrupted: ${error.message}`);
+      } else {
+        console.error(
+          `Rank check ${runId} failed: ${describeError(error)}`,
+          error,
+        );
+      }
       // A retry after the body finished (an engine storage failure) sends the
       // failed event again; harmless.
       await pgStep(step, "mark-failed", FREE_STEP_CONFIG, async () =>
