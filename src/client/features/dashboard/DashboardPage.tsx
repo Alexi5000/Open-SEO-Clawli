@@ -18,7 +18,10 @@ import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { sort } from "remeda";
 import { DashboardOnboarding } from "./DashboardOnboarding";
-import { DashboardAgentCard } from "./DashboardAgentCard";
+import {
+  DashboardAgentCard,
+  DashboardAgentPromptCard,
+} from "./DashboardAgentCard";
 import { getStepStatus } from "./dashboardSteps";
 import {
   AuditHealthCard,
@@ -93,6 +96,13 @@ export function DashboardPage({
   const showBacklinks = activation.domain !== null;
   const gscConnected = activation.gsc.connected;
   const ga4Connected = activation.ga4.connected;
+  // An agent is connected, but no one in the organization has used OpenSEO
+  // from one yet.
+  const agentNeverUsed =
+    activation.mcp.authorizedAt !== null &&
+    activation.mcp.firstToolCallAt === null &&
+    !activation.dismissedSteps.includes("mcp") &&
+    activation.mcp.cardDismissedAt === null;
 
   // Search Console always renders: connected shows the report, otherwise the
   // connect pitch. It sits ahead of the optional GA4 pitch.
@@ -184,9 +194,15 @@ export function DashboardPage({
           </Button>
         </div>
 
-        {usesBetterAuthClient() &&
-        getStepStatus(activation, "mcp") === "todo" ? (
-          <DashboardAgentCard projectId={projectId} />
+        {usesBetterAuthClient() ? (
+          getStepStatus(activation, "mcp") === "todo" ? (
+            <DashboardAgentCard projectId={projectId} />
+          ) : agentNeverUsed ? (
+            <DashboardAgentPromptCard
+              projectId={projectId}
+              domain={activation.domain}
+            />
+          ) : null
         ) : null}
 
         <WorkspaceMergeBanner />
