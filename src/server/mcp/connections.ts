@@ -1,7 +1,7 @@
 import { sortBy } from "remeda";
 import { z } from "zod";
 import { getCapturedOAuthHelpers } from "@/server/mcp/oauth-provider";
-import { safeHostname } from "@/shared/safe-url";
+import { getWebChat } from "@/server/mcp/web-chat";
 
 // The OAuth grants behind "Connected agents" in Settings. Grants live under
 // the KV key grant:{userId}:{grantId}, so listUserGrants and revokeGrant can
@@ -10,16 +10,6 @@ import { safeHostname } from "@/shared/safe-url";
 const grantMetadataSchema = z.looseObject({
   organizationId: z.string().optional(),
 });
-
-// The chat app on the web the agent runs in, if any. Client names are
-// self-reported; the redirect address is where the authorization code goes.
-// Agents on the user's computer redirect to localhost or an app scheme.
-function getWebChat(redirectUris: string[]) {
-  const hosts = redirectUris.map(safeHostname);
-  if (hosts.includes("claude.ai")) return "claude" as const;
-  if (hosts.includes("chatgpt.com")) return "chatgpt" as const;
-  return null;
-}
 
 async function listMcpConnections(userId: string) {
   const oauth = getCapturedOAuthHelpers();

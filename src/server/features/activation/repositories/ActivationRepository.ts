@@ -56,9 +56,12 @@ async function recordFirstMcpAuthorized(organizationId: string): Promise<void> {
     });
 }
 
-async function recordFirstMcpToolCall(organizationId: string): Promise<void> {
+// Returns whether this was the organization's first call.
+async function recordFirstMcpToolCall(
+  organizationId: string,
+): Promise<boolean> {
   const now = new Date().toISOString();
-  await db
+  const [row] = await db
     .insert(organizationActivationState)
     .values({ organizationId, firstMcpToolCallAt: now, updatedAt: now })
     .onConflictDoUpdate({
@@ -67,7 +70,11 @@ async function recordFirstMcpToolCall(organizationId: string): Promise<void> {
         firstMcpToolCallAt: sql`coalesce(${organizationActivationState.firstMcpToolCallAt}, ${now})`,
         updatedAt: now,
       },
+    })
+    .returning({
+      firstMcpToolCallAt: organizationActivationState.firstMcpToolCallAt,
     });
+  return row?.firstMcpToolCallAt === now;
 }
 
 // An agent that creates a project through MCP has done the wizard's main job,
