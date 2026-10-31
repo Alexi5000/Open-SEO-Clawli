@@ -17,11 +17,20 @@ import { getOptionalEnvValue } from "@/server/lib/runtime-env";
 type OnboardingRecipient = { userId: string; userEmail: string };
 
 type OnboardingMilestone =
-  "auditStarted" | "gscConnected" | "rankTrackingSetUp" | "mcpConnected";
+  | "auditStarted"
+  | "gscConnected"
+  | "rankTrackingSetUp"
+  | "mcpConnected"
+  | "mcpToolCalled";
 
 export async function markOnboardingMilestone(
   recipient: OnboardingRecipient,
   milestone: OnboardingMilestone,
+  // Set alongside the milestone for its emails (see markMcpConnected).
+  properties: {
+    agentProvider?: "claude" | "chatgpt";
+    mcpToolCalled?: true;
+  } = {},
 ) {
   await sendOnce(`${milestone}:${recipient.userId}`, (apiKey) =>
     updateLoopsContact({
@@ -30,6 +39,7 @@ export async function markOnboardingMilestone(
         email: recipient.userEmail,
         userId: recipient.userId,
         [milestone]: true,
+        ...properties,
       },
       logContext: { action: "onboarding-milestone", milestone },
     }),
