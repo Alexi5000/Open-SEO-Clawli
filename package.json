@@ -49,6 +49,7 @@
     "test:watch": "vitest",
     "test:ci": "vitest run --reporter=dot",
     "test:standalone:gateway": "node --test scripts/celld/runtime/crawl-gateway.test.mjs",
+    "test:standalone:runtime": "sh scripts/celld/conformance/conformance.sh",
     "test:e2e": "playwright test -c tests/playwright.config.ts",
     "test:e2e:free-tools": "playwright test -c tests/playwright.free-tools.config.ts",
     "test:e2e:mcp-isolation": "playwright test -c tests/playwright.mcp-isolation.config.ts",
