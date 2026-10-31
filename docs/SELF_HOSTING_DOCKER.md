@@ -158,6 +158,8 @@ curl --fail http://localhost:3001/api/health
 
 `/api/health` succeeds only when sign-in is configured and the database answers. If `init` fails, Nginx does not start; its log says why. `docker compose down -v` deletes the installation's data and secrets.
 
+The runtime needs a kernel with 4 KiB memory pages. A Raspberry Pi 5's default kernel uses 16 KiB pages, and `init` and `runtime` then exit with a message that says so. Add `kernel=kernel8.img` to `/boot/firmware/config.txt` and reboot to use its 4 KiB kernel. Check with `getconf PAGESIZE`, which should print `4096`.
+
 ## How it works
 
 OpenSEO is written for Cloudflare Workers. In Docker it runs on [celld](https://github.com/denoland/celld), an open-source runtime for Workers code, which provides the same database, storage, background workflows and scheduled jobs on your own machine. [RustFS](https://github.com/rustfs/rustfs) stores that state, Nginx serves the app, and a small crawl gateway keeps site crawls away from private network addresses. `init` runs once at each start: it generates secrets on the first run, loads the app and applies database migrations.
