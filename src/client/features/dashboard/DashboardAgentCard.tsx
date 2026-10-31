@@ -7,7 +7,7 @@ import { Button } from "@/client/components/ui/button";
 import { Card } from "@/client/components/ui/card";
 import { ONE_CLICK_INSTALLS } from "@/client/features/ai-mcp/agentInstalls";
 import { captureClientEvent } from "@/client/lib/posthog";
-import { setDashboardStepDismissed } from "@/serverFunctions/dashboard";
+import { dismissDashboardAgentCard } from "@/serverFunctions/dashboard";
 import { listMcpConnections } from "@/serverFunctions/mcp-connections";
 
 const actionClassName = "h-9 px-3 text-xs sm:text-sm";
@@ -118,18 +118,12 @@ function AgentCard({
 }) {
   const queryClient = useQueryClient();
   const dismiss = useMutation({
-    mutationFn: () =>
-      setDashboardStepDismissed({
-        data: { projectId, step: "mcp", dismissed: true },
-      }),
+    mutationFn: () => dismissDashboardAgentCard({ data: { projectId } }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["dashboardActivation", projectId],
       });
-      captureClientEvent("dashboard:setup_step_defer", {
-        step: "mcp",
-        dismissed: true,
-      });
+      captureClientEvent("dashboard:agent_card_dismiss");
     },
   });
 
